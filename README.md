@@ -32,3 +32,15 @@ Cullary focuses on one job:
 
 - [Related Products](wiki/related-products.md)
 - [Implementation Plan](wiki/implementation-plan.md)
+- [Road Map](wiki/road_map.md)
+- [Preprocess Pipeline](wiki/preprocess.md)
+
+## Preprocess Prototype
+
+Run the local preprocessing pipeline against the current sample folder:
+
+```bash
+python3 scripts/preprocess.py /Users/liubin/Desktop/TestImage
+```
+
+The prototype writes generated previews, per-photo analysis JSON, `manifest.jsonl`, and `run_summary.json` under `.cullary_cache/`. Source photos are read-only.

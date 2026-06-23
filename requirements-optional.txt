@@ -1,0 +1,10 @@
+# Optional dependencies for richer local analyzers.
+# The base CLI works with Python stdlib + exiftool + macOS sips.
+Pillow
+numpy
+opencv-python
+mediapipe
+# For future Mac-friendly embedding benchmarks; install one stack at a time.
+# torch
+# transformers
+# timm

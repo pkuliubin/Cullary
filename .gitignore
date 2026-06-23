@@ -1,0 +1,8 @@
+# Cullary generated preprocessing cache
+.cullary_cache/
+cache/
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+.venv/

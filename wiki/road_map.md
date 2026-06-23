@@ -53,7 +53,7 @@ Exit criteria:
 
 ## Phase 1: Analysis Schema and Local Cache
 
-Goal: define the durable data model before building UI or recommendation logic.
+Goal: define the durable data contract before building UI or recommendation logic. The first implementation uses JSONL plus per-photo JSON files instead of SQLite; a database can be introduced later if the UI needs richer querying.
 
 Core records:
 
@@ -72,7 +72,7 @@ Core records:
 
 Tasks:
 
-- Create SQLite schema for scan/cache/analysis/decision data.
+- Create a cache directory with `manifest.jsonl`, per-photo analysis JSON, cached previews, and run summaries.
 - Store analyzer version and model version with each analysis result.
 - Support incremental scan by file path, size, mtime, and optionally hash.
 - Make analyzer outputs nullable so slow or failed analyzers do not block the whole task.
@@ -80,7 +80,7 @@ Tasks:
 
 Exit criteria:
 
-- The system can persist complete scan and analysis state locally.
+- The system can persist complete scan and analysis state locally without SQLite.
 - Re-running a scan avoids unnecessary repeated work.
 - Failed analysis steps are visible and recoverable.
 
@@ -239,7 +239,7 @@ Exit criteria:
 Recommended immediate order:
 
 1. Validate preview and metadata extraction on real samples.
-2. Define SQLite schema and analyzer result contracts.
+2. Define JSONL/cache layout and analyzer result contracts.
 3. Implement the first analyzer pipeline with embedding, face, and IQA fields included.
 4. Implement time-session plus embedding-based clustering.
 5. Implement explainable keeper recommendation.
