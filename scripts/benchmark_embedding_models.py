@@ -70,7 +70,7 @@ def choose_preview(cache_dir: Path, source_id: str | None, source_path: str | No
             continue
         candidates.append(record)
     if not candidates:
-        raise SystemExit("No matching cached preview found. Run scripts/preprocess.py first.")
+        raise SystemExit("No matching cached preview found. Run `python -m cullary.preprocessing` first.")
     record = candidates[0]
     return Path(record["preview_path"]), record
 

@@ -35,12 +35,44 @@ Cullary focuses on one job:
 - [Road Map](wiki/road_map.md)
 - [Preprocess Pipeline](wiki/preprocess.md)
 
-## Preprocess Prototype
+## Phase 1 Preprocess Pipeline
 
-Run the local preprocessing pipeline against the current sample folder:
+Run the local preprocessing pipeline against a photo folder:
 
 ```bash
-python3 scripts/preprocess.py /Users/liubin/Desktop/TestImage
+PYTHONPATH=src /opt/anaconda3/envs/hippo/bin/python -m cullary.preprocessing /Users/liubin/Desktop/TestImage
 ```
 
-The prototype writes generated previews, per-photo analysis JSON, `manifest.jsonl`, and `run_summary.json` under `.cullary_cache/`. Source photos are read-only.
+Progress is printed to stderr by default. For machine-readable logs or silent runs:
+
+```bash
+PYTHONPATH=src /opt/anaconda3/envs/hippo/bin/python -m cullary.preprocessing /Users/liubin/Desktop/TestImage --progress jsonl
+PYTHONPATH=src /opt/anaconda3/envs/hippo/bin/python -m cullary.preprocessing /Users/liubin/Desktop/TestImage --quiet
+```
+
+After installing the package locally, the formal console entry is:
+
+```bash
+/opt/anaconda3/envs/hippo/bin/python -m pip install -e .
+cullary-preprocess /Users/liubin/Desktop/TestImage
+```
+
+The pipeline writes generated previews, thumbnails, per-photo analysis JSON, embedding vectors, `manifest.jsonl`, `task_state.json`, and `run_summary.json` under the selected folder's `.cullary/` directory. Source photos are read-only.
+
+Verify the output contract:
+
+```bash
+/opt/anaconda3/envs/hippo/bin/python scripts/verify_phase1_outputs.py /Users/liubin/Desktop/TestImage
+```
+
+Run the full smoke check, including resume/stale behavior:
+
+```bash
+scripts/smoke_phase1.sh /Users/liubin/Desktop/TestImage
+```
+
+## Code Layout
+
+- `src/cullary/preprocessing/`: Phase 1 pipeline orchestration, task state, manifest/run summary writes.
+- `src/cullary/analyzers/`: reusable analyzer implementations for metadata/preview, hash, image metrics, embedding, face, and IQA.
+- `scripts/`: smoke tests, verification helpers, benchmarks, and model download utilities.

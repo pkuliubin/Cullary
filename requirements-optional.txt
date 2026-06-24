@@ -1,10 +1,17 @@
 # Optional dependencies for richer local analyzers.
-# The base CLI works with Python stdlib + exiftool + macOS sips.
+# The base CLI still expects exiftool on PATH for metadata/preview extraction.
 Pillow
 numpy
 opencv-python
+pyiqa
+scikit-image
+torch
+transformers
+
+# Optional/experimental analyzers and benchmarks.
 mediapipe
-# For future Mac-friendly embedding benchmarks; install one stack at a time.
-# torch
-# transformers
-# timm
+insightface
+onnxruntime
+piq
+timm
+open_clip_torch

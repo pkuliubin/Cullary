@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "cache": {
+    "dir_name": ".cullary"
+  },
+  "models": {
+    "model_dir": "~/.cullary/models"
+  },
+  "pipeline": {
+    "default_workers": 1,
+    "stage_workers": {
+      "metadata": 4,
+      "preview": 4,
+      "thumb": 4,
+      "hash": 4,
+      "image_metrics": 4,
+      "embedding": 1,
+      "face": 1,
+      "iqa": 1
+    }
+  },
+  "preview": {
+    "long_edge": 1600
+  },
+  "thumb": {
+    "long_edge": 360
+  },
+  "hash": {
+    "enabled": true
+  },
+  "image_metrics": {
+    "enabled": true,
+    "max_side": 1024
+  },
+  "embedding": {
+    "enabled": true,
+    "model": "dinov2-small",
+    "model_version": "facebook/dinov2-small",
+    "model_path": "hf-direct/facebook__dinov2-small",
+    "input_size": "processor_default",
+    "normalize": true,
+    "batch_size": 8
+  },
+  "face": {
+    "enabled": true,
+    "model": "yunet",
+    "model_path": "yunet/face_detection_yunet_2023mar.onnx",
+    "max_side": 1280,
+    "score_threshold": 0.6,
+    "nms_threshold": 0.3,
+    "top_k": 5000
+  },
+  "iqa": {
+    "enabled": true,
+    "metric": "piqe",
+    "max_side": 512,
+    "compare_metrics": []
+  }
+}
