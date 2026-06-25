@@ -44,6 +44,12 @@ class PhotoRecord:
     preview_path: Path
     thumb_path: Path
     embedding_path: Path
+    foreground_embedding_path: Path
+    background_embedding_path: Path
+    person_mask_path: Path
+    person_enhanced_mask_path: Path
+    foreground_path: Path
+    background_path: Path
     metadata_raw_path: Path
     source_changed: bool = False
     analysis: dict[str, Any] = field(default_factory=dict)

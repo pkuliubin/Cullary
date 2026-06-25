@@ -94,7 +94,7 @@ Analyzer failures are isolated. Model analyzer failures can make the run `partia
 
 - `metadata` and `preview`: `ThreadPoolExecutor`, default 4 workers.
 - `thumb`, `hash`, and `image_metrics`: `ProcessPoolExecutor`, default 4 workers.
-- `embedding`: single worker with batch inference, default `batch_size=8`.
+- `embedding`: single worker with batch inference. `device=auto` prefers MPS, then CUDA, then CPU; default `mps_batch_size=4`, `cpu_batch_size=8`.
 - `face` and `iqa`: single worker for stable model/runtime ownership.
 
 Workers only compute analyzer payloads. The main process remains the only writer for `task_state.json`, `manifest.jsonl`, and per-photo `analysis.json`.
@@ -110,4 +110,4 @@ scripts/smoke_phase1.sh /Users/liubin/Desktop/TestImage
 
 ## Mac mini M4 Model Policy
 
-Default model analyzers must be fast and smooth on Mac mini M4. Heavy IQA or face models should be used later only for candidate re-ranking, not the full first-pass pipeline.
+Default model analyzers must be fast and smooth on Mac mini M4. Embedding uses Torch MPS when available; YuNet face, MediaPipe person mask, and PIQE IQA do not use Torch MPS in the current default path. Heavy IQA or face models should be used later only for candidate re-ranking, not the full first-pass pipeline.

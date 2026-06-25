@@ -46,6 +46,18 @@ hf openai/clip-vit-base-patch32 vocab.json hf-direct/openai__clip-vit-base-patch
 hf openai/clip-vit-base-patch32 merges.txt hf-direct/openai__clip-vit-base-patch32
 hf openai/clip-vit-base-patch32 pytorch_model.bin hf-direct/openai__clip-vit-base-patch32
 
+if [ "${INCLUDE_CLIP_L14:-0}" = "1" ]; then
+  # Optional aesthetic predictor encoder: OpenAI CLIP ViT-L/14.
+  # This is much larger than ViT-B/32, so it is opt-in.
+  hf openai/clip-vit-large-patch14 config.json hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 preprocessor_config.json hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 tokenizer.json hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 tokenizer_config.json hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 vocab.json hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 merges.txt hf-direct/openai__clip-vit-large-patch14
+  hf openai/clip-vit-large-patch14 pytorch_model.bin hf-direct/openai__clip-vit-large-patch14
+fi
+
 # Embedding: DINOv2 small/base.
 hf facebook/dinov2-small config.json hf-direct/facebook__dinov2-small
 hf facebook/dinov2-small preprocessor_config.json hf-direct/facebook__dinov2-small

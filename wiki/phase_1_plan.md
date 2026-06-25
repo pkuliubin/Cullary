@@ -109,7 +109,11 @@ config/preprocess.default.json
     "model_version": "facebook/dinov2-small",
     "input_size": "processor_default",
     "normalize": true,
-    "batch_size": 8
+    "device": "auto",
+    "device_fallback": true,
+    "batch_size": 8,
+    "cpu_batch_size": 8,
+    "mps_batch_size": 4
   },
   "face": {
     "enabled": true,
@@ -487,7 +491,8 @@ UI 约定：
     "model_version": "facebook/dinov2-small",
     "dim": 384,
     "input_size": "processor_default",
-    "batch_size": 8,
+    "batch_size": 4,
+    "device": "mps",
     "normalized": true,
     "vector_path": ".cullary/embeddings/B0007796_HEIC.npy",
     "preview_source": "preview_path"
@@ -855,7 +860,7 @@ Phase 1 需要记录端到端耗时，但不以性能优化作为阻塞主线。
 
 - `metadata` / `preview` 使用 `ThreadPoolExecutor`，默认 4 workers。
 - `thumb` / `hash` / `image_metrics` 使用 `ProcessPoolExecutor`，默认 4 workers。
-- `embedding` 默认 `workers=1`，但使用 batch 推理，默认 `batch_size=8`。
+- `embedding` 默认 `workers=1`，使用 batch 推理；`device=auto` 时优先 MPS，MPS 默认 `batch_size=4`，CPU 默认 `batch_size=8`。
 - `face` / `iqa` 默认 `workers=1`，保持单进程模型实例和稳定输出。
 - 所有 manifest、task_state、analysis 写入仍由主进程统一完成，worker 只返回 analyzer payload/status。
 

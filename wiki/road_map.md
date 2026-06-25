@@ -157,7 +157,7 @@ Tasks:
 
 - Implement a weighted scoring formula.
 - Support different weighting profiles for portraits, landscapes, and burst/action sets.
-- Select 1-3 keepers per cluster based on cluster size and diversity.
+- Select keepers per cluster based on cluster size and diversity.
 - Generate recommendation reasons and warnings.
 - Store recommendation confidence.
 
@@ -198,7 +198,7 @@ Goal: safely move rejected files without permanent deletion.
 
 Tasks:
 
-- Move rejected photos to `_to_delete/`.
+- Move rejected photos to `.to_delete/`.
 - Preserve source folder structure where possible.
 - Move sidecar files with the source file.
 - Generate JSON or CSV decision logs.
@@ -244,7 +244,7 @@ Recommended immediate order:
 4. Implement time-session plus embedding-based clustering.
 5. Implement explainable keeper recommendation.
 6. Build the minimal review UI.
-7. Add safe staging to `_to_delete/`.
+7. Add safe staging to `.to_delete/`.
 
 ## Open Decisions
 

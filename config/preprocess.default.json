@@ -1,29 +1,28 @@
 {
-  "schema_version": "1.0",
   "cache": {
     "dir_name": ".cullary"
   },
-  "models": {
-    "model_dir": "~/.cullary/models"
+  "embedding": {
+    "batch_size": 8,
+    "cpu_batch_size": 8,
+    "device": "auto",
+    "device_fallback": true,
+    "enabled": true,
+    "input_size": "processor_default",
+    "mps_batch_size": 4,
+    "model": "dinov2-small",
+    "model_path": "hf-direct/facebook__dinov2-small",
+    "model_version": "facebook/dinov2-small",
+    "normalize": true
   },
-  "pipeline": {
-    "default_workers": 1,
-    "stage_workers": {
-      "metadata": 4,
-      "preview": 4,
-      "thumb": 4,
-      "hash": 4,
-      "image_metrics": 4,
-      "embedding": 1,
-      "face": 1,
-      "iqa": 1
-    }
-  },
-  "preview": {
-    "long_edge": 1600
-  },
-  "thumb": {
-    "long_edge": 360
+  "face": {
+    "enabled": true,
+    "max_side": 1280,
+    "model": "yunet",
+    "model_path": "yunet/face_detection_yunet_2023mar.onnx",
+    "nms_threshold": 0.3,
+    "score_threshold": 0.6,
+    "top_k": 5000
   },
   "hash": {
     "enabled": true
@@ -32,28 +31,69 @@
     "enabled": true,
     "max_side": 1024
   },
-  "embedding": {
-    "enabled": true,
-    "model": "dinov2-small",
-    "model_version": "facebook/dinov2-small",
-    "model_path": "hf-direct/facebook__dinov2-small",
-    "input_size": "processor_default",
-    "normalize": true,
-    "batch_size": 8
-  },
-  "face": {
-    "enabled": true,
-    "model": "yunet",
-    "model_path": "yunet/face_detection_yunet_2023mar.onnx",
-    "max_side": 1280,
-    "score_threshold": 0.6,
-    "nms_threshold": 0.3,
-    "top_k": 5000
-  },
   "iqa": {
+    "compare_metrics": [],
     "enabled": true,
-    "metric": "piqe",
     "max_side": 512,
-    "compare_metrics": []
+    "metric": "piqe"
+  },
+  "models": {
+    "model_dir": "~/.cullary/models"
+  },
+  "person_mask": {
+    "dilate_px": 32,
+    "enabled": true,
+    "enhanced_blur_radius": 120,
+    "feather_px": 18,
+    "model_path": "mediapipe/selfie_segmenter.tflite",
+    "threshold": 0.5
+  },
+  "pipeline": {
+    "default_workers": 1,
+    "stage_workers": {
+      "embedding": 1,
+      "face": 1,
+      "hash": 4,
+      "image_metrics": 4,
+      "iqa": 1,
+      "metadata": 4,
+      "person_mask": 1,
+      "preview": 4,
+      "thumb": 4
+    }
+  },
+  "preview": {
+    "long_edge": 1600
+  },
+  "review": {
+    "candidate_neighbor_limit": 40,
+    "candidate_time_window_seconds": 1800,
+    "challenger_queue_size": 5,
+    "embedding_similarity_threshold": 0.86,
+    "hard_time_gap_seconds": 3600,
+    "keeper_policy": {
+      "large_set_keep_count": 3,
+      "large_set_min_size": 9,
+      "max_keep_count": 3,
+      "medium_set_keep_count": 2,
+      "medium_set_min_size": 4,
+      "small_set_keep_count": 1
+    },
+    "multi_embedding": {
+      "background_veto_threshold": 0.6,
+      "background_weight": 0.3,
+      "combined_similarity_threshold": 0.84,
+      "enabled": true,
+      "foreground_veto_min_area_ratio": 0.08,
+      "foreground_veto_threshold": 0.5,
+      "foreground_weight": 0.25,
+      "global_weight": 0.45,
+      "mixed_foreground_global_threshold": 0.9
+    },
+    "near_duplicate_similarity_threshold": 0.93
+  },
+  "schema_version": "1.0",
+  "thumb": {
+    "long_edge": 360
   }
 }

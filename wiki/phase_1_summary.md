@@ -208,14 +208,18 @@ ProcessPoolExecutor, workers=4
   "model_version": "facebook/dinov2-small",
   "input_size": "processor_default",
   "normalize": true,
-  "batch_size": 8
+  "device": "auto",
+  "device_fallback": true,
+  "batch_size": 8,
+  "cpu_batch_size": 8,
+  "mps_batch_size": 4
 }
 ```
 
 执行策略：
 
 ```text
-workers=1, batch_size=8
+workers=1, device=auto, mps_batch_size=4, cpu_batch_size=8
 ```
 
 当前样本检查：
@@ -489,7 +493,8 @@ experimental:
   "kind": "vision",
   "dim": 384,
   "input_size": "processor_default",
-  "batch_size": 8,
+  "batch_size": 4,
+  "device": "mps",
   "normalized": true,
   "vector_path": ".cullary/embeddings/B0007772_HEIC.npy",
   "preview_source": "preview_path"

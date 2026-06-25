@@ -110,7 +110,7 @@
 暂不默认：DINOv2-base / SigLIP base
 ```
 
-说明：当前测试运行在 CPU。当前 `hippo` 环境中 PyTorch 的 MPS 检测异常，后续可以单独优化 MPS 环境。
+补充：后续复测确认当前 `hippo` 环境 PyTorch MPS 可用。正式 pipeline 的 embedding 已改为 `device=auto`，优先使用 MPS；MPS 默认 `batch_size=4`，CPU 默认 `batch_size=8`。当前 YuNet face、MediaPipe person mask、PIQE IQA 不走 Torch MPS。
 
 ## 已测试的 face 模型
 

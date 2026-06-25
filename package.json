@@ -1,0 +1,30 @@
+{
+  "name": "cullary-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "check:mock": "node app/scripts/validate-mock-data.mjs",
+    "check:desktop": "npm run check:mock && npm run test:review-state && npm run test:staging-contract && npm run build && npm run test:render",
+    "test:review-state": "node app/scripts/test-review-state.mjs",
+    "test:staging-contract": "node app/scripts/test-staging-contract.mjs",
+    "test:render": "node app/scripts/test-built-ui.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.2",
+    "@vitejs/plugin-react": "^5.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

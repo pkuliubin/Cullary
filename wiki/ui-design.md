@@ -63,241 +63,106 @@ Do not add dashboard cards, global albums, statistics panels, or marketing-style
 
 ## Screen 2: Processing
 
-Purpose: build trust while the backend analyzes the folder.
+Purpose: show trustworthy progress while the backend analyzes the folder.
 
-Show the active pipeline stage and useful counts.
+The processing screen should not expose raw JSON logs in the main UI. It should present a product-level progress dashboard.
+
+Current model:
 
 ```text
-┌──────────────────────────────────────────────┐
-│ Processing /Users/.../Photos                 │
-├──────────────────────────────────────────────┤
-│ Scanning files              done             │
-│ Extracting metadata         done             │
-│ Building previews           312 / 580        │
-│ Generating thumbnails       waiting          │
-│ Analyzing quality           waiting          │
-│ Grouping clusters           waiting          │
-│ Recommending keepers        waiting          │
-│                                              │
-│ Failed: 2                                    │
-│ Skipped: 7                                   │
-└──────────────────────────────────────────────┘
+查找照片      shows completed substeps / total substeps
+准备预览      shows completed substeps / total substeps
+分析画面      shows completed substeps / total substeps
+整理 Review   shows completed substeps / total substeps
+
+Current product step expands its substeps:
+  检测人脸 100%
+  识别主体 68%
+  画面指标 0%
 ```
 
-The page should expose failures, but it should not interrupt the whole task unless the critical preview/cache layer fails.
+Rules:
+
+- product-level steps show substep completion count, not raw per-photo percent;
+- substeps show their own percentage;
+- previous stages should never visually go backward;
+- when later stages start, earlier stages can be inferred complete;
+- raw logs may exist for debugging, but should not dominate the product UI.
+
+The page should expose failure state and a recovery path such as `使用已有结果`, but it should not interrupt the whole task unless critical artifacts are missing.
 
 ## Screen 3: Cluster Review
 
 This is the core product screen.
 
-Recommended layout:
+Current layout:
 
 ```text
-┌────────────────────────────────────────────────────────────────────┐
-│ Task: Winter trip     Remaining: 42 clusters      [Final Review]   │
-├───────────────┬──────────────────────────────────┬─────────────────┤
-│ Cluster list  │ Main workspace                   │ Recommendation  │
-│               │                                  │                 │
-│ [keeper] 12   │  Keeper slot 1                    │ 推荐保留：       │
-│ [keeper] 8    │  Large keeper preview             │ - 人脸更清晰     │
-│ [keeper] 21   │  Challengers: [B] [C] [D]          │ - 曝光更稳定     │
-│ ...           │                                  │ - 与另一张有差异 │
-│               │                                  │                 │
-│               │  [View All Photos]                │ Top challengers │
-├───────────────┴──────────────────────────────────┴─────────────────┤
-│ [Accept Cluster] [Compare] [Keep More] [Undo] [Next]                │
-└────────────────────────────────────────────────────────────────────┘
+Top bar
+├─ left: cluster list
+├─ center: deck / compare / grid workspace
+└─ right: group summary, current photo reasons, decision status
 ```
 
 ### Left Cluster List
 
-Keep it minimal.
+Keep it minimal. Sort clusters by photo count descending so the highest-impact groups are reviewed first.
 
 Each cluster row should show:
 
-- recommended keeper thumbnail;
+- cover thumbnail;
 - number of photos in the cluster;
-- confirmation status;
-- optional warning marker only when needed.
+- confirmation status when useful.
 
-Example:
+Avoid raw scores, camera metadata, timestamps, and dense metrics in the list.
 
-```text
-[thumb] 12 photos   未确认
-[thumb]  8 photos   已确认
-[thumb] 21 photos   低置信度
-```
+### Deck Mode
 
-Avoid showing raw scores, camera metadata, timestamps, and multiple metrics in the list.
-
-### Main Cluster Area
-
-The main workspace should be deck-first, not grid-first.
-
-Default mode is `deck`:
+Deck mode is the default review mode. It uses a simple two-pool mental model:
 
 ```text
-keeper slots, 1-3 recommended keepers
-  -> active keeper large preview
-  -> top challenger strip
-  -> Chinese recommendation reasons
+保留      photos that will stay in the original folder
+待删除    photos that will move to .to_delete/ during final confirmation
 ```
 
-The full cluster grid is a secondary mode, entered through `View All Photos`.
+The backend provides `primary_keeper_id`, `alternate_keeper_ids`, and a cluster-level `challenger_queue`. The UI initializes only the primary keeper as `保留`. Alternates are shown as higher-priority challengers, not automatically kept.
 
-`View All Photos` should be visible in the deck, not hidden in an overflow menu. Deck-first should guide review, but it must not make the user feel that the system is hiding unshown photos.
-
-The deck should show cluster coverage copy such as:
+Deck layout:
 
 ```text
-本组 20 张，显示 2 个推荐保留和 5 个重点挑战者
-[查看全部]
+保留 strip
+large selected preview
+待删除 strip
+bottom actions: 保留 / 待删除 / 进入对比
 ```
 
-This preserves global awareness while keeping the primary flow focused.
+Clicking any keeper or challenger immediately changes the main preview.
 
-Reason:
+### Right Inspector
 
-- the backend already recommends 1-3 keeper slots;
-- each keeper slot has targeted challengers;
-- most user work should be validating or correcting recommendations, not manually searching through every photo;
-- full grid remains available for low-confidence or unusual clusters.
+The right inspector should be compact and decision-oriented:
 
-Default behavior:
+- keep ratio, e.g. `3/12`;
+- retained source size / total source size;
+- safe staging explanation;
+- mark group complete checklist;
+- current photo recommendation reasons and weaknesses in Chinese.
 
-- system-recommended keepers are visually prominent;
-- recommended rejects are subdued, but not styled as deleted;
-- user can override every suggestion;
-- the system recommends 1-3 keepers per cluster;
-- the 1-3 keepers should be diversity-aware, not three near-identical frames.
+`标记本组完成` is only a checklist marker. It does not move files, lock decisions, or delete anything.
 
-Review modes inside the cluster screen:
+### Language
 
-```ts
-type ReviewMode = "deck" | "compare" | "grid"
-```
-
-Mode behavior:
-
-```text
-deck     primary review deck, keeper slots plus top challengers
-compare  focused two-image detail compare inside the same cluster screen
-grid     secondary full-cluster thumbnail view
-```
-
-### Keeper Slots
-
-If the system recommends more than one keeper, the deck should show all keeper slots clearly.
-
-Recommended structure:
-
-```text
-Keeper slots: [Keeper 1] [Keeper 2] [Keeper 3]
-
-Active keeper:
-  large preview
-  recommendation reasons
-  challenger queue
-```
-
-The user can switch active keeper slots. Switching keeper slots updates the large preview, reasons, and challenger queue.
-
-This matters because Cullary should preserve useful diversity. Three recommendations that look nearly identical are not helpful; multiple keeper slots should communicate distinct value, such as:
-
-```text
-Keeper 1: 最清晰的人像
-Keeper 2: 表情不同
-Keeper 3: 构图更完整
-```
-
-Suggested visual states:
-
-```text
-recommended_keep     strong outline / accent label
-user_keep            confirmed keep state
-recommended_reject   lower opacity, still recoverable
-user_reject          marked for move-aside, still undoable
-staged_to_delete     only after final staging operation
-```
-
-Do not use permanent-delete language during cluster review.
-
-Use language like:
+Use user-safe language:
 
 ```text
 保留
-标记移出
-待清理
+待删除
+安全暂存区
+应用最终确认
 撤销
 ```
 
-Avoid language like:
-
-```text
-删除
-永久删除
-```
-
-until the final file operation confirmation.
-
-### Recommendation Inspector
-
-Recommendation reasons should be shown in Chinese.
-
-Good form:
-
-```text
-推荐保留这张：
-- 人脸更清晰
-- 眼睛状态正常
-- 曝光更稳定
-- 和另一张推荐图有构图差异
-```
-
-For non-keepers:
-
-```text
-不优先推荐：
-- 面部略虚
-- 高光溢出较多
-- 和已推荐照片过于相似
-```
-
-Scores can exist as secondary details, but the primary UI should be human-readable reasons.
-
-## Keeper Recommendation Model in UI
-
-For each cluster, the backend should provide:
-
-```text
-recommended_keepers: 1-3 photos
-```
-
-Each keeper should also have targeted challengers:
-
-```text
-Keeper 1
-  challenger queue: B, C, D
-
-Keeper 2
-  challenger queue: E, F
-
-Keeper 3
-  challenger queue: G
-```
-
-This makes compare mode focused. The user should not need to manually compare every possible pair in a 20-photo cluster.
-
-The challenger queue is ordered. The first item should be the most likely alternative to the current keeper, not a random remaining photo.
-
-Queue quality is part of the product experience. A good challenger queue should prioritize:
-
-- photos that are visually similar enough to replace the keeper;
-- photos with close or better technical quality;
-- meaningful expression, pose, or composition alternatives;
-- diversity candidates that might deserve `Keep Both`.
-
-The first few challengers should not be obvious failures unless the reason is to explain why they were rejected.
+Avoid implying automatic or permanent deletion during cluster review.
 
 ## Compare Mode
 
@@ -313,7 +178,6 @@ State model:
 type ReviewState = {
   mode: "deck" | "compare" | "grid"
   currentClusterId: string
-  activeKeeperSlotId: string
   activeKeeperPhotoId: string
   activeChallengerPhotoId?: string
 }
@@ -325,7 +189,7 @@ Entering compare changes only:
 mode = "compare"
 ```
 
-The current cluster, keeper slot, and challenger context remain stable. Returning from compare restores `mode = "deck"` and keeps the same selected keeper/challenger context.
+The current cluster, keeper, and challenger context remain stable. Returning from compare restores `mode = "deck"` and keeps the same selected keeper/challenger context.
 
 ### Entry Points
 
@@ -367,7 +231,7 @@ Core actions:
 
 ```text
 Keep Current       keep the current keeper and continue
-Replace            challenger replaces current keeper slot
+Replace            challenger becomes keep; old keeper returns to delete candidates
 Keep Both          both photos become keepers
 Previous/Next      move through challenger queue
 Back to Cluster    return to deck mode
@@ -480,35 +344,35 @@ This works better than copying pixel offsets because two images can have differe
 
 ## Screen 4: Final Staging
 
-Cluster review only records user decisions. It should not move files immediately.
+Cluster review records user intent. It should not move files immediately.
 
-After all clusters are confirmed, show a final staging screen.
+Final staging is global for the selected folder. It applies the latest decisions across all clusters.
 
-Purpose: safely move user-confirmed rejects into `_to_delete/`.
+Current behavior:
 
 ```text
-┌──────────────────────────────────────────────┐
-│ Final Review                                 │
-├──────────────────────────────────────────────┤
-│ Keep: 184                                    │
-│ Move aside: 396                              │
-│ Destination: /Photos/_to_delete/             │
-│ Sidecars: include matching XMP if present    │
-│ Log: .cullary_cache/file_operations.jsonl    │
-│                                              │
-│ No files will be permanently deleted.         │
-│                                              │
-│ [Back to Review]       [Move to _to_delete]  │
-└──────────────────────────────────────────────┘
+保留     stays in original location
+待删除   moves to <input_folder>/.to_delete/
 ```
 
-Why this step exists:
+No files are permanently deleted in the current app.
 
-- cluster review marks decisions;
-- final staging performs file operations;
-- user can still review the total impact;
-- operation logs make undo/recovery possible;
-- sidecar movement can be checked consistently.
+The final confirmation screen should separate final state from this-run diff:
+
+```text
+最终状态
+  保留 78 张，待删除 35 张
+
+本次变更
+  移入 .to_delete 0 张，恢复保留 1 张
+
+无需移动
+  已在 .to_delete 35 张，已在原位 77 张
+```
+
+This avoids misleading copy such as `移动 35 张` when those 35 photos are already staged.
+
+The Rust layer owns staging and writes operation logs to `.cullary/file_operations.jsonl`. Undo is performed by operation batch id.
 
 ## Visual Direction
 
@@ -597,10 +461,10 @@ The default loop should be:
 
 ```text
 open cluster
-  -> inspect recommended keepers
+  -> inspect current keeper pool and delete candidates
   -> compare keeper with challenger queue when needed
-  -> accept or adjust decisions
-  -> confirm cluster
+  -> mark photos 保留 / 待删除
+  -> mark cluster complete as a checklist item
   -> move to next cluster
 ```
 
@@ -612,12 +476,12 @@ Recommended behavior in the cluster grid:
 
 ```text
 single click photo         select photo and show reasons
-double click challenger    open compare against current keeper
-checkbox/action button     mark keep / mark move-aside
+保留 button                mark selected photo as keep
+待删除 button              mark selected photo as delete candidate
 Compare button             enter compare with selected challenger queue
 View All Photos            switch to full cluster grid mode
-Accept Cluster             apply current keep/move-aside decisions and confirm cluster
-Undo                       revert last decision in current cluster
+标记本组完成               checklist marker only; no file movement
+Undo                       revert last decision when available
 ```
 
 This avoids overloading a single click with destructive meaning.
@@ -632,9 +496,8 @@ Suggested shortcuts:
 J / K or ↓ / ↑     previous / next cluster
 ← / →              previous / next photo in current cluster
 C                  open compare
-A                  accept cluster
 K                  mark selected as keep
-R                  mark selected as move-aside
+D                  mark selected as 待删除
 L                  toggle linked zoom in compare
 0                  reset zoom
 Esc                exit compare
@@ -723,64 +586,65 @@ Each cluster should expose:
 
 ### Required Recommendation Fields
 
-Each cluster recommendation should expose:
+Current Schema 1.1 review model:
 
 ```json
 {
-  "cluster_id": "...",
-  "recommended_keepers": [
+  "review_set_id": "set_000001",
+  "photo_count": 12,
+  "primary_keeper_id": "A",
+  "recommended_keep_ids": ["A"],
+  "alternate_keeper_ids": ["B"],
+  "challenger_queue": [
     {
-      "photo_id": "...",
+      "photo_id": "B",
+      "compare_to": "A",
       "rank": 1,
-      "confidence": 0.86,
-      "reason_summary_zh": [
-        "人脸更清晰",
-        "眼睛状态正常",
-        "曝光更稳定"
-      ],
-      "diversity_reason_zh": "和第一张推荐图构图不同",
-      "challenger_queue": [
-        {
-          "photo_id": "...",
-          "rank": 1,
-          "reason_zh": "清晰度接近，但表情略弱"
-        }
-      ]
+      "similarity_to_primary": 0.94,
+      "score_delta": -0.06,
+      "reason_zh": "视觉相似度较高，可作为对比候选"
     }
   ],
-  "recommended_rejects": [
+  "photos": [
     {
-      "photo_id": "...",
-      "reason_summary_zh": ["面部略虚", "和推荐照片过于相似"]
+      "display_id": "A",
+      "source_path": "/path/to/A.3FR",
+      "thumb_path": ".cullary/thumbs/A.jpg",
+      "preview_path": ".cullary/previews/A.jpg",
+      "ui_initial_state": "recommended_keep",
+      "score": { "overall": 0.78 },
+      "reason_summary_zh": ["技术质量较好"],
+      "weakness_summary_zh": []
     }
   ]
 }
 ```
 
+UI rule: only `primary_keeper_id` / `recommended_keep_ids[0]` starts as `保留`. `alternate_keeper_ids` are challengers with a visual alternate marker.
+
 ### Required Decision Fields
 
-User decisions should be separate from system recommendations.
+User decisions are separate from system recommendations and are appended to `decisions.jsonl`. Latest decision wins.
 
 ```json
 {
-  "cluster_id": "...",
-  "photo_id": "...",
-  "system_recommendation": "reject",
-  "user_decision": "keep",
-  "decision_source": "manual_override",
-  "created_at": "..."
+  "schema_version": "1.0",
+  "event_type": "photo_decision",
+  "review_set_id": "set_000001",
+  "display_id": "A",
+  "previous_user_state": "user_challenger",
+  "user_state": "user_keep",
+  "source": "manual",
+  "created_at": 1782360000000
 }
 ```
 
-Recommended state separation:
+Current user states:
 
 ```text
-recommended_reject  # system suggestion
-user_marked_reject  # user confirmed mark
-staged_to_delete    # file has been moved to _to_delete
+user_keep        UI label: 保留
+user_challenger  UI label: 待删除; final staging candidate
 ```
-
-These states must not be collapsed.
 
 ### Preference Learning Log
 
@@ -882,7 +746,7 @@ Use mock JSON that follows the backend requirement examples in this document. Th
 Do not implement in the first frontend pass:
 
 ```text
-real file moving
+permanent delete
 real preference learning model
 batch accept
 photo editing
@@ -897,10 +761,10 @@ Before considering the first UI prototype usable:
 - 1000+ thumbnails can scroll smoothly in virtualized mode;
 - no grid uses `preview_path` where `thumb_path` is available;
 - compare mode supports both landscape stacked layout and portrait side-by-side layout;
-- compare mode can move previous/next through a keeper's challenger queue;
+- compare mode can move previous/next through the current challenger pool;
 - linked zoom/pan can be toggled on and off;
 - user decisions are visually distinct from system recommendations;
-- `Accept Cluster` changes only review state, not source files;
+- `标记本组完成` changes only checklist progress, not source files;
 - every primary action is reachable by mouse and keyboard;
 - recommendation reasons are readable in Chinese;
 - final staging screen clearly says files are moved aside, not permanently deleted.

@@ -7,3 +7,8 @@ __pycache__/
 *.py[cod]
 .venv/
 .cullary/
+
+# Desktop app artifacts
+node_modules/
+dist/
+src-tauri/target/

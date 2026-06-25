@@ -15,17 +15,19 @@ ANALYZER_VERSIONS = {
     "thumb": "thumb-v1",
     "hash": "hash-ahash-dhash-phash-v2",
     "image_metrics": "image-metrics-v1",
-    "embedding": "dinov2-small-transformers-v1",
     "face": "opencv-yunet-v1",
+    "person_mask": "mediapipe-selfie-segmentation-v1",
+    "embedding": "dinov2-small-transformers-v2",
     "iqa": "pyiqa-piqe-v1",
 }
 
-PIPELINE_STAGES = ["scan", "metadata", "preview", "thumb", "hash", "image_metrics", "embedding", "face", "iqa"]
+PIPELINE_STAGES = ["scan", "metadata", "preview", "thumb", "hash", "face", "person_mask", "image_metrics", "embedding", "iqa"]
 DEPENDENCIES = {
     "thumb": ["preview"],
     "hash": ["preview"],
-    "image_metrics": ["preview"],
-    "embedding": ["preview"],
     "face": ["preview"],
+    "person_mask": ["preview", "face"],
+    "image_metrics": ["preview", "person_mask"],
+    "embedding": ["preview", "person_mask"],
     "iqa": ["preview"],
 }

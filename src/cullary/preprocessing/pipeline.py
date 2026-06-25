@@ -13,6 +13,7 @@ from cullary.analyzers.hash import compute_hashes
 from cullary.analyzers.image_metrics import compute_image_metrics
 from cullary.analyzers.iqa import IqaAnalyzer
 from cullary.analyzers.media import create_thumb, extract_metadata, extract_preview
+from cullary.analyzers.person_mask import PersonMaskAnalyzer
 from cullary.constants import ANALYZER_VERSIONS, DEPENDENCIES, IGNORED_NAMES, PIPELINE_STAGES, SCHEMA_VERSION, SUPPORTED_EXTENSIONS
 from cullary.domain import AnalyzerStatus, PhotoRecord
 from cullary.features import default_score_features
@@ -115,6 +116,7 @@ class PreprocessPipeline:
         self.task: TaskState | None = None
         self.embedding_analyzer = EmbeddingAnalyzer(self.models_dir, self.config.get("embedding", {}))
         self.face_analyzer = FaceAnalyzer(self.models_dir, self.config.get("face", {}))
+        self.person_mask_analyzer = PersonMaskAnalyzer(self.models_dir, self.config.get("person_mask", {}))
         self.iqa_analyzer = IqaAnalyzer(self.config.get("iqa", {}))
         self.progress = progress
         self.pipeline_config = self.config.get("pipeline", {})
@@ -149,7 +151,7 @@ class PreprocessPipeline:
             self.progress({"type": event_type, **payload})
 
     def ensure_cache_dirs(self) -> None:
-        for name in ["previews", "thumbs", "analysis", "embeddings", "logs"]:
+        for name in ["previews", "thumbs", "analysis", "embeddings", "foreground_embeddings", "background_embeddings", "masks", "foregrounds", "backgrounds", "logs"]:
             (self.cache_dir / name).mkdir(parents=True, exist_ok=True)
 
     def make_task_id(self) -> str:
@@ -208,6 +210,12 @@ class PreprocessPipeline:
                 preview_path=self.cache_dir / "previews" / f"{display_id}.jpg",
                 thumb_path=self.cache_dir / "thumbs" / f"{display_id}.jpg",
                 embedding_path=self.cache_dir / "embeddings" / f"{display_id}.npy",
+                foreground_embedding_path=self.cache_dir / "foreground_embeddings" / f"{display_id}.npy",
+                background_embedding_path=self.cache_dir / "background_embeddings" / f"{display_id}.npy",
+                person_mask_path=self.cache_dir / "masks" / f"{display_id}__person.png",
+                person_enhanced_mask_path=self.cache_dir / "masks" / f"{display_id}__person_enhanced.png",
+                foreground_path=self.cache_dir / "foregrounds" / f"{display_id}.jpg",
+                background_path=self.cache_dir / "backgrounds" / f"{display_id}.jpg",
                 metadata_raw_path=analysis_dir / "metadata.raw.json",
                 source_changed=source_changed,
                 analysis=self.load_or_init_analysis(source_id, display_id, source, stat, analysis_dir, existing_analysis),
@@ -226,6 +234,9 @@ class PreprocessPipeline:
             "hash": existing.get("hash", {}),
             "image_metrics": existing.get("image_metrics", {}),
             "embedding": existing.get("embedding", {}),
+            "foreground_embedding": existing.get("foreground_embedding"),
+            "background_embedding": existing.get("background_embedding"),
+            "person_mask": existing.get("person_mask", {}),
             "face_metrics": existing.get("face_metrics", {}),
             "iqa_metrics": existing.get("iqa_metrics", {}),
             "score_features": existing.get("score_features", default_score_features()),
@@ -294,6 +305,8 @@ class PreprocessPipeline:
                 self.set_status(rec, stage, status)
                 if status.status == "success":
                     rec.changed_stages.add(stage)
+                if status.status == "skipped":
+                    runtime.skipped += 1
                 if status.status == "failed":
                     runtime.failed += 1
                     self.task.errors.append({"source": str(rec.source_path), "stage": stage, "error": status.error_message})
@@ -342,7 +355,7 @@ class PreprocessPipeline:
         assert self.task is not None
         runtime, stage_start, progress_every = self.begin_stage(stage)
         batch: list[PhotoRecord] = []
-        batch_size = max(1, int(self.config.get("embedding", {}).get("batch_size", 8)))
+        batch_size = self.embedding_analyzer.batch_size()
         for rec in self.records:
             if not self.dependencies_ready(stage, rec):
                 self.set_status(rec, stage, self.make_status(stage, "skipped", 0, "dependency unavailable", None))
@@ -368,35 +381,58 @@ class PreprocessPipeline:
         runtime = self.task.stages[stage]
         started_at = now_iso()
         start = time.perf_counter()
-        loaded: list[tuple[PhotoRecord, Any, Path]] = []
+        items: list[tuple[Any, Path, PhotoRecord, str]] = []
         load_failures: dict[str, str] = {}
         for rec in records:
             try:
                 with Image.open(rec.preview_path) as image:
-                    loaded.append((rec, image.convert("RGB"), rec.embedding_path))
+                    items.append((image.convert("RGB"), rec.embedding_path, rec, "embedding"))
+                person_mask = rec.analysis.get("person_mask") or {}
+                if person_mask.get("status") == "success":
+                    if rec.foreground_path.exists():
+                        with Image.open(rec.foreground_path) as image:
+                            items.append((image.convert("RGB"), rec.foreground_embedding_path, rec, "foreground_embedding"))
+                    if rec.background_path.exists():
+                        with Image.open(rec.background_path) as image:
+                            items.append((image.convert("RGB"), rec.background_embedding_path, rec, "background_embedding"))
             except Exception as exc:
                 load_failures[rec.source_id] = f"{type(exc).__name__}: {exc}"
         try:
-            batch_results = self.embedding_analyzer.analyze_batch([(image, path) for _, image, path in loaded])
+            batch_results = self.embedding_analyzer.analyze_batch([(image, path) for image, path, _, _ in items])
         except Exception as exc:
-            batch_results = [(None, f"{type(exc).__name__}: {exc}") for _ in loaded]
-        result_by_source_id = {rec.source_id: result for (rec, _, _), result in zip(loaded, batch_results)}
+            batch_results = [(None, f"{type(exc).__name__}: {exc}") for _ in items]
+        result_by_source_id: dict[str, dict[str, tuple[dict[str, Any] | None, str | None, Path]]] = {}
+        for (_, path, rec, kind), result in zip(items, batch_results):
+            result_by_source_id.setdefault(rec.source_id, {})[kind] = (result[0], result[1], path)
         for rec in records:
-            payload, error = result_by_source_id.get(rec.source_id, (None, load_failures.get(rec.source_id, "embedding batch did not return a result")))
-            output_path = str(rec.embedding_path) if not error else None
+            kinds = result_by_source_id.get(rec.source_id, {})
+            global_payload, global_error, global_path = kinds.get("embedding", (None, load_failures.get(rec.source_id, "embedding batch did not return a result"), rec.embedding_path))
+            if global_payload:
+                global_payload["vector_path"] = cache_relative(global_path, self.folder)
+                global_payload["embedding_role"] = "global"
+            for role, target_key in [("foreground_embedding", "foreground"), ("background_embedding", "background")]:
+                payload, error, path = kinds.get(role, (None, None, getattr(rec, f"{target_key}_embedding_path")))
+                if payload and not error:
+                    payload["vector_path"] = cache_relative(path, self.folder)
+                    payload["embedding_role"] = target_key
+                    payload["preview_source"] = f"{target_key}_path"
+                    rec.analysis[role] = payload
+                elif (rec.analysis.get("person_mask") or {}).get("status") == "success":
+                    rec.analysis[role] = {"status": "failed", "error_message": error or "not generated"}
+                else:
+                    rec.analysis[role] = None
+            output_path = str(rec.embedding_path) if not global_error else None
             status = AnalyzerStatus(
-                "failed" if error else "success",
+                "failed" if global_error else "success",
                 ANALYZER_VERSIONS[stage],
                 config_hash(self.config, stage),
                 int((time.perf_counter() - start) * 1000),
                 started_at,
                 now_iso(),
-                error,
+                global_error,
                 cache_relative(Path(output_path), self.folder) if output_path else None,
             )
-            if payload:
-                payload["vector_path"] = cache_relative(rec.embedding_path, self.folder)
-            self.apply_stage_result(rec, stage, status, payload)
+            self.apply_stage_result(rec, stage, status, global_payload)
             runtime.done += 1
             self.write_analysis(rec)
             self.record_progress(stage, progress_every)
@@ -439,7 +475,11 @@ class PreprocessPipeline:
         started_at = now_iso(); start = time.perf_counter()
         try:
             payload, error, output_path = self._execute_stage_payload(stage, rec)
-            status_name = "failed" if error else "success"
+            if stage == "person_mask" and payload and payload.get("reason") == "no_face_detected":
+                status_name = "skipped"
+                error = payload.get("reason")
+            else:
+                status_name = "failed" if error else "success"
         except Exception as exc:
             payload, error, output_path = None, f"{type(exc).__name__}: {exc}", None
             status_name = "failed"
@@ -477,6 +517,24 @@ class PreprocessPipeline:
         if stage == "face":
             payload, error = self.face_analyzer.analyze(rec.preview_path)
             return payload, error, str(rec.analysis_path) if not error else None
+        if stage == "person_mask":
+            payload, error, output_path = self.person_mask_analyzer.analyze(
+                rec.preview_path,
+                rec.analysis.get("face_metrics", {}),
+                mask_path=rec.person_mask_path,
+                enhanced_mask_path=rec.person_enhanced_mask_path,
+                background_path=rec.background_path,
+                foreground_path=rec.foreground_path,
+            )
+            if payload:
+                status_override = payload.pop("__status", None)
+                reason = payload.get("reason")
+                if status_override == "skipped":
+                    return payload, None, None
+                for key in ["mask_path", "enhanced_mask_path", "background_fill_path", "foreground_path"]:
+                    if key in payload:
+                        payload[key] = cache_relative(Path(payload[key]), self.folder)
+            return payload, error, output_path if not error else None
         if stage == "iqa":
             metric_name = self.config.get("iqa", {}).get("metric", "piqe")
             input_path = rec.analysis_dir / f"iqa_{metric_name}_input.jpg"
@@ -502,9 +560,18 @@ class PreprocessPipeline:
         elif stage == "image_metrics": rec.analysis["image_metrics"] = payload
         elif stage == "embedding": rec.analysis["embedding"] = payload
         elif stage == "face": rec.analysis["face_metrics"] = payload
+        elif stage == "person_mask": rec.analysis["person_mask"] = payload
         elif stage == "iqa": rec.analysis["iqa_metrics"] = payload
 
     def write_analysis(self, rec: PhotoRecord) -> None:
+        person_mask = rec.analysis.get("person_mask") or {}
+        if person_mask.get("status") == "success":
+            rec.analysis.setdefault("image_metrics", {}).setdefault("foreground", {})
+            rec.analysis["image_metrics"]["foreground"].update({
+                "foreground_area_ratio": person_mask.get("foreground_area_ratio"),
+                "foreground_enhanced_area_ratio": person_mask.get("foreground_enhanced_area_ratio"),
+                "source": "person_mask",
+            })
         rec.analysis["score_features"] = rec.analysis.get("score_features") or default_score_features()
         write_json(rec.analysis_path, rec.analysis)
 
@@ -516,6 +583,7 @@ class PreprocessPipeline:
         status_map = {stage: statuses.get(stage, {}).get("status", "pending") for stage in PIPELINE_STAGES if stage != "scan"}
         metrics = rec.analysis.get("image_metrics", {})
         face = rec.analysis.get("face_metrics", {})
+        person_mask = rec.analysis.get("person_mask", {})
         exposure = metrics.get("exposure", {}) if isinstance(metrics, dict) else {}
         warnings = []
         if exposure.get("shadow_clip_ratio", 0) > 0.05: warnings.append("shadow_clip")
@@ -528,7 +596,7 @@ class PreprocessPipeline:
             "assets": rec.analysis.get("assets", {}),
             "analysis_path": cache_relative(rec.analysis_path, self.folder),
             "status": {"overall": self.overall_status(rec), **status_map},
-            "ui_summary": {"orientation": metrics.get("composition", {}).get("orientation"), "face_count": face.get("face_count"), "quality_label": "normal", "warning_flags": warnings},
+            "ui_summary": {"orientation": metrics.get("composition", {}).get("orientation"), "face_count": face.get("face_count"), "foreground_area_ratio": person_mask.get("foreground_area_ratio"), "quality_label": "normal", "warning_flags": warnings},
         }
 
     def overall_status(self, rec: PhotoRecord) -> str:
