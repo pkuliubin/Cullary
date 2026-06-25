@@ -1,0 +1,17 @@
+# Optional dependencies for richer local analyzers.
+# The base CLI still expects exiftool on PATH for metadata/preview extraction.
+Pillow
+numpy
+opencv-python
+pyiqa
+scikit-image
+torch
+transformers
+
+# Optional/experimental analyzers and benchmarks.
+mediapipe
+insightface
+onnxruntime
+piq
+timm
+open_clip_torch

@@ -16,7 +16,7 @@ Cullary is a local-first photo culling taskbench. The core job is to scan a fold
 - Cluster results.
 - Recommended keepers per cluster.
 - A review UI.
-- A `_to_delete/` staging folder for rejected photos.
+- A `.to_delete/` staging folder for rejected photos.
 
 **Non-goals for MVP**
 
@@ -37,7 +37,7 @@ Select folder
   -> split sessions by time
   -> cluster visually similar photos within each session
   -> score photos inside each cluster
-  -> recommend 1-3 keepers
+  -> recommend primary keepers and challengers
   -> user confirms or edits keepers
   -> move non-keepers to staging
 ```
@@ -364,7 +364,7 @@ Never permanently delete in the MVP.
 
 Recommended behavior:
 
-- move rejected files to `_to_delete/`;
+- move rejected files to `.to_delete/`;
 - preserve folder structure where possible;
 - generate a JSON or CSV decision log;
 - support undo before final cleanup;
