@@ -1,0 +1,14 @@
+# Cullary generated preprocessing cache
+.cullary_cache/
+cache/
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.cullary/
+
+# Desktop app artifacts
+node_modules/
+dist/
+src-tauri/target/

@@ -1,0 +1,13 @@
+[project]
+name = "cullary"
+version = "0.1.0"
+description = "Local-first photo culling and preprocessing toolkit."
+requires-python = ">=3.11"
+
+[project.scripts]
+cullary-preprocess = "cullary.preprocessing.cli:main"
+cullary-review = "cullary.review.cli:main"
+cullary-pipeline = "cullary.pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
