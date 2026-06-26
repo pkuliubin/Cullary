@@ -97,6 +97,13 @@ def compute_image_metrics(path: Path, max_side: int) -> dict[str, Any]:
     hsv = cv2.cvtColor(bgr_work, cv2.COLOR_BGR2HSV)
     gray_f = gray.astype(np.float32)
     p01, p05, p50, p95, p99 = [float(v) for v in np.percentile(gray_f, [1, 5, 50, 95, 99])]
+    hist_counts_16, _ = np.histogram(gray, bins=16, range=(0, 256))
+    hist_counts_64, _ = np.histogram(gray, bins=64, range=(0, 256))
+    hist_total = max(1, int(hist_counts_64.sum()))
+    rgb_hist = []
+    for channel in range(3):
+        channel_counts, _ = np.histogram(rgb[:, :, channel], bins=64, range=(0, 256))
+        rgb_hist.append([round(float(v / hist_total), 6) for v in channel_counts])
     cx0, cy0, cx1, cy1 = int(w * 0.25), int(h * 0.25), int(w * 0.75), int(h * 0.75)
     center_gray = gray[cy0:cy1, cx0:cx1]
     sat = hsv[:, :, 1].astype(np.float32)
@@ -110,6 +117,9 @@ def compute_image_metrics(path: Path, max_side: int) -> dict[str, Any]:
             "shadow_clip_ratio": round(float(np.count_nonzero(gray <= 4) / gray.size), 6),
             "highlight_clip_ratio": round(float(np.count_nonzero(gray >= 251) / gray.size), 6),
             "dynamic_range_p05_p95": round(float((p95 - p05) / 255.0), 6),
+            "brightness_histogram_16": [round(float(v / max(1, int(hist_counts_16.sum()))), 6) for v in hist_counts_16],
+            "brightness_histogram": [round(float(v / hist_total), 6) for v in hist_counts_64],
+            "rgb_histogram": {"r": rgb_hist[0], "g": rgb_hist[1], "b": rgb_hist[2]},
         },
         "contrast": {"contrast_std_ratio": round(float(gray_f.std() / 255.0), 6)},
         "color": {

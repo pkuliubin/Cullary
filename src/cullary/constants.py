@@ -18,7 +18,7 @@ ANALYZER_VERSIONS = {
     "face": "opencv-yunet-v1",
     "person_mask": "mediapipe-selfie-segmentation-v1",
     "embedding": "dinov2-small-transformers-v2",
-    "iqa": "pyiqa-piqe-v1",
+    "iqa": "pyiqa-piqe-laion-aesthetic-v2",
 }
 
 PIPELINE_STAGES = ["scan", "metadata", "preview", "thumb", "hash", "face", "person_mask", "image_metrics", "embedding", "iqa"]

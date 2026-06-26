@@ -145,6 +145,17 @@ def verify_folder(folder: Path) -> dict[str, Any]:
 
         iqa = analysis.get("iqa_metrics", {}).get("metrics", {}).get("piqe", {})
         finite_number(iqa.get("score"), "piqe.score")
+        aesthetic = analysis.get("iqa_metrics", {}).get("metrics", {}).get("aesthetic", {})
+        finite_number(aesthetic.get("score"), "aesthetic.score")
+        finite_number(aesthetic.get("normalized_score"), "aesthetic.normalized_score")
+        if aesthetic.get("direction") != "higher_is_better":
+            raise AssertionError(f"aesthetic.direction must be higher_is_better in {analysis_path}")
+        if aesthetic.get("clip_head") != "vit_b_32":
+            raise AssertionError(f"aesthetic.clip_head must be vit_b_32 in {analysis_path}")
+        if not aesthetic.get("device"):
+            raise AssertionError(f"aesthetic.device missing in {analysis_path}")
+        if not isinstance(aesthetic.get("batch_size"), int) or aesthetic.get("batch_size") < 1:
+            raise AssertionError(f"aesthetic.batch_size must be positive int in {analysis_path}")
         counts["iqa_records"] += 1
 
         if record.get("status", {}).get("overall") == "success":

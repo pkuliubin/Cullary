@@ -68,11 +68,11 @@ def execute_stage_payload_worker(stage: str, rec: PhotoRecord, config: dict[str,
     if stage == "metadata":
         if not tools.get("exiftool"):
             return None, "exiftool is required but was not found", None
-        payload = extract_metadata(rec.source_path, rec.metadata_raw_path)
+        payload = extract_metadata(rec.source_path, rec.metadata_raw_path, tools.get("exiftool"))
         payload["raw_path"] = cache_relative(rec.metadata_raw_path, folder)
         return payload, None, str(rec.analysis_path)
     if stage == "preview":
-        payload, error = extract_preview(rec.source_path, rec.preview_path, int(config["preview"]["long_edge"]), tools.get("sips"))
+        payload, error = extract_preview(rec.source_path, rec.preview_path, int(config["preview"]["long_edge"]), tools.get("sips"), tools.get("exiftool"))
         if payload and rec.preview_path.exists():
             payload["preview_path"] = cache_relative(rec.preview_path, folder)
         return payload, error, str(rec.preview_path) if not error else None
@@ -117,7 +117,7 @@ class PreprocessPipeline:
         self.embedding_analyzer = EmbeddingAnalyzer(self.models_dir, self.config.get("embedding", {}))
         self.face_analyzer = FaceAnalyzer(self.models_dir, self.config.get("face", {}))
         self.person_mask_analyzer = PersonMaskAnalyzer(self.models_dir, self.config.get("person_mask", {}))
-        self.iqa_analyzer = IqaAnalyzer(self.config.get("iqa", {}))
+        self.iqa_analyzer = IqaAnalyzer(self.models_dir, self.config.get("iqa", {}))
         self.progress = progress
         self.pipeline_config = self.config.get("pipeline", {})
 
@@ -256,6 +256,9 @@ class PreprocessPipeline:
     def run_stage(self, stage: str) -> None:
         if stage == "embedding":
             self.run_embedding_stage(stage)
+            return
+        if stage == "iqa":
+            self.run_iqa_stage(stage)
             return
         if self.stage_workers(stage) > 1 and stage in PARALLEL_EXECUTOR_BY_STAGE:
             self.run_parallel_stage(stage)
@@ -437,6 +440,58 @@ class PreprocessPipeline:
             self.write_analysis(rec)
             self.record_progress(stage, progress_every)
 
+    def run_iqa_stage(self, stage: str) -> None:
+        assert self.task is not None
+        runtime, stage_start, progress_every = self.begin_stage(stage)
+        batch: list[PhotoRecord] = []
+        batch_size = self.iqa_analyzer.batch_size()
+        for rec in self.records:
+            if not self.dependencies_ready(stage, rec):
+                self.set_status(rec, stage, self.make_status(stage, "skipped", 0, "dependency unavailable", None))
+                runtime.skipped += 1; runtime.done += 1
+                self.write_analysis(rec)
+                self.record_progress(stage, progress_every)
+            elif self.should_skip(rec, stage):
+                runtime.skipped += 1; runtime.done += 1
+                self.record_progress(stage, progress_every)
+            else:
+                batch.append(rec)
+                if len(batch) >= batch_size:
+                    self.process_iqa_batch(stage, batch, progress_every)
+                    batch = []
+        if batch:
+            self.process_iqa_batch(stage, batch, progress_every)
+        self.finish_stage(stage, stage_start)
+
+    def process_iqa_batch(self, stage: str, records: list[PhotoRecord], progress_every: int) -> None:
+        assert self.task is not None
+        runtime = self.task.stages[stage]
+        started_at = now_iso()
+        start = time.perf_counter()
+        metric_name = self.config.get("iqa", {}).get("metric", "piqe")
+        items = [(rec.preview_path, rec.analysis_dir / f"iqa_{metric_name}_input.jpg") for rec in records]
+        try:
+            batch_results = self.iqa_analyzer.analyze_batch(items)
+        except Exception as exc:
+            batch_results = [(None, f"{type(exc).__name__}: {exc}") for _ in records]
+        for rec, input_path, (payload, error) in zip(records, [item[1] for item in items], batch_results):
+            if payload:
+                payload.setdefault("input", {})["path"] = cache_relative(input_path, self.folder)
+            status = AnalyzerStatus(
+                "failed" if error else "success",
+                ANALYZER_VERSIONS[stage],
+                config_hash(self.config, stage),
+                int((time.perf_counter() - start) * 1000),
+                started_at,
+                now_iso(),
+                error,
+                cache_relative(rec.analysis_path, self.folder) if not error else None,
+            )
+            self.apply_stage_result(rec, stage, status, payload)
+            runtime.done += 1
+            self.write_analysis(rec)
+            self.record_progress(stage, progress_every)
+
     def stage_workers(self, stage: str) -> int:
         stage_workers = self.pipeline_config.get("stage_workers", {})
         value = stage_workers.get(stage, self.pipeline_config.get("default_workers", 1))
@@ -490,11 +545,11 @@ class PreprocessPipeline:
         if stage == "metadata":
             if not self.tools.get("exiftool"):
                 return None, "exiftool is required but was not found", None
-            payload = extract_metadata(rec.source_path, rec.metadata_raw_path)
+            payload = extract_metadata(rec.source_path, rec.metadata_raw_path, self.tools.get("exiftool"))
             payload["raw_path"] = cache_relative(rec.metadata_raw_path, self.folder)
             return payload, None, str(rec.analysis_path)
         if stage == "preview":
-            payload, error = extract_preview(rec.source_path, rec.preview_path, int(self.config["preview"]["long_edge"]), self.tools.get("sips"))
+            payload, error = extract_preview(rec.source_path, rec.preview_path, int(self.config["preview"]["long_edge"]), self.tools.get("sips"), self.tools.get("exiftool"))
             if payload and rec.preview_path.exists():
                 payload["preview_path"] = cache_relative(rec.preview_path, self.folder)
             return payload, error, str(rec.preview_path) if not error else None

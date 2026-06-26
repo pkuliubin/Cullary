@@ -25,6 +25,7 @@ export function createReviewState({ folder, summary = null, reviewSets = [] }) {
       left: { scale: 1, x: 0, y: 0 },
       right: { scale: 1, x: 0, y: 0 },
     },
+    deckZoom: { scale: 1, x: 0, y: 0 },
   };
 }
 
@@ -172,13 +173,13 @@ export function selectSet(state, index) {
   state.activeKeeperId = null;
   state.activeChallengerId = null;
   state.mode = 'deck';
-  resetZoom(state);
+  resetAllZoom(state);
 }
 
 export function selectKeeper(state, photoId) {
   state.activeKeeperId = photoId;
   state.activePhotoId = photoId;
-  resetZoom(state);
+  resetDeckZoom(state);
 }
 
 export function selectChallenger(state, indexOrId) {
@@ -189,12 +190,12 @@ export function selectChallenger(state, indexOrId) {
   if (!photo) return;
   state.activeChallengerId = photo.display_id;
   state.activePhotoId = photo.display_id;
-  resetZoom(state);
+  resetDeckZoom(state);
 }
 
 export function selectMoveAside(state, photoId) {
   state.activePhotoId = photoId;
-  resetZoom(state);
+  resetDeckZoom(state);
 }
 
 export function nextChallenger(state) {
@@ -205,7 +206,7 @@ export function nextChallenger(state) {
   }
   const currentIndex = Math.max(0, challengers.findIndex((photo) => photo.display_id === activeChallenger(state)?.display_id));
   state.activeChallengerId = challengers[(currentIndex + 1) % challengers.length].display_id;
-  if (state.mode !== 'compare') resetZoom(state);
+  if (state.mode !== 'compare') resetDeckZoom(state);
 }
 
 export function previousChallenger(state) {
@@ -216,7 +217,7 @@ export function previousChallenger(state) {
   }
   const currentIndex = Math.max(0, challengers.findIndex((photo) => photo.display_id === activeChallenger(state)?.display_id));
   state.activeChallengerId = challengers[(currentIndex - 1 + challengers.length) % challengers.length].display_id;
-  if (state.mode !== 'compare') resetZoom(state);
+  if (state.mode !== 'compare') resetDeckZoom(state);
 }
 
 export function setDecisionState(state, photo, userState) {
@@ -252,7 +253,7 @@ export function replaceWithChallenger(state) {
   state.activePhotoId = challenger.display_id;
   state.activeChallengerId = null;
   ensureActivePointers(state);
-  resetZoom(state);
+  resetAllZoom(state);
   return { keeper, challenger, previousKeeper, previousChallenger };
 }
 
@@ -266,7 +267,7 @@ export function keepBoth(state) {
   state.activePhotoId = challenger.display_id;
   state.activeChallengerId = null;
   ensureActivePointers(state);
-  resetZoom(state);
+  resetAllZoom(state);
   return { keeper, challenger, previousKeeper, previousChallenger };
 }
 
@@ -276,7 +277,7 @@ export function moveAsideActiveChallenger(state) {
   const previous = setDecisionState(state, challenger, 'user_marked_move_aside');
   state.activeChallengerId = null;
   ensureActivePointers(state);
-  resetZoom(state);
+  resetAllZoom(state);
   return { challenger, previous };
 }
 
@@ -301,6 +302,19 @@ export function resetZoom(state) {
   state.compare.y = 0;
   state.compare.left = { scale: 1, x: 0, y: 0 };
   state.compare.right = { scale: 1, x: 0, y: 0 };
+}
+
+export function resetAllZoom(state) {
+  resetZoom(state);
+  state.deckZoom = { scale: 1, x: 0, y: 0 };
+}
+
+export function updateDeckZoom(state, updater) {
+  state.deckZoom = updater(state.deckZoom || { scale: 1, x: 0, y: 0 });
+}
+
+export function resetDeckZoom(state) {
+  state.deckZoom = { scale: 1, x: 0, y: 0 };
 }
 
 function clamp(value, min, max) {

@@ -125,6 +125,14 @@ config/preprocess.default.json
     "enabled": true,
     "metric": "piqe",
     "max_side": 512,
+    "aesthetic": {
+      "enabled": true,
+      "model": "laion-aesthetic-predictor-v1",
+      "clip_model": "openai/clip-vit-base-patch32"
+    },
+    "aesthetic_device": "auto",
+    "aesthetic_mps_batch_size": 8,
+    "aesthetic_cpu_batch_size": 8,
     "compare_metrics": []
   }
 }
@@ -789,16 +797,17 @@ Phase 1 可以产出归一化前的 score feature 框架，但不产出最终 re
 
 实现：
 
-- 默认使用 PIQE。
+- 默认使用 PIQE + LAION aesthetic predictor ViT-B/32。
 - 输入缩放到长边 512。
-- 输出 `score` 和 `direction=lower_is_better`。
+- PIQE 输出 `score` 和 `direction=lower_is_better`。
+- aesthetic 输出 `score`、`normalized_score` 和 `direction=higher_is_better`。
 
 验证：
 
 - 当前测试样本能完成或给出逐张失败原因。
-- 输出值为有限数字。
+- PIQE 和 aesthetic 输出值为有限数字。
 - 耗时记录到 analyzer status。
-- PIQE 缺包或运行失败时，不影响其他 analyzer。
+- PIQE 或 aesthetic 缺包/缺模型/运行失败时，不影响其他 analyzer，并给出逐张失败原因。
 
 ### Step 11：Run Summary
 
@@ -846,7 +855,7 @@ Phase 1 可以产出归一化前的 score feature 框架，但不产出最终 re
 - 每张成功照片都有 metadata、hash、image_metrics。
 - embedding 成功时，每张照片都有 `.npy` vector。
 - face 无人脸时也是成功状态。
-- IQA 输出 PIQE 分数或明确失败原因。
+- IQA 输出 PIQE 分数和 ViT-B/32 aesthetic 分数，或明确失败原因。
 - 中断后重跑不会重复处理已成功且未变化的 analyzer。
 - 删除单张 analysis 后重跑只补这张或相关 analyzer。
 - 修改配置后，只让受影响 analyzer 变 stale 并重算。
@@ -861,7 +870,7 @@ Phase 1 需要记录端到端耗时，但不以性能优化作为阻塞主线。
 - `metadata` / `preview` 使用 `ThreadPoolExecutor`，默认 4 workers。
 - `thumb` / `hash` / `image_metrics` 使用 `ProcessPoolExecutor`，默认 4 workers。
 - `embedding` 默认 `workers=1`，使用 batch 推理；`device=auto` 时优先 MPS，MPS 默认 `batch_size=4`，CPU 默认 `batch_size=8`。
-- `face` / `iqa` 默认 `workers=1`，保持单进程模型实例和稳定输出。
+- `face` 默认 `workers=1`。`iqa` 默认 `workers=1`，其中 aesthetic 使用 batch 推理；`aesthetic_device=auto` 优先 MPS，MPS/CPU 默认 `batch_size=8`。
 - 所有 manifest、task_state、analysis 写入仍由主进程统一完成，worker 只返回 analyzer payload/status。
 
 需要输出的统计：

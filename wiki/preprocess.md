@@ -86,7 +86,7 @@ Analyzer failures are isolated. For example, missing model dependencies should n
 - Image metrics: OpenCV/NumPy exposure, contrast, color, sharpness, composition, and experimental noise/motion proxies.
 - Embedding: DINOv2-small via local Transformers model, vector written as `.npy`.
 - Face: OpenCV YuNet face count, boxes, landmarks, area ratio, face sharpness, and alignment.
-- IQA: PIQE via `pyiqa` on a resized input.
+- IQA: PIQE via `pyiqa` on a resized input, plus LAION aesthetic predictor using local CLIP ViT-B/32.
 
 Analyzer failures are isolated. Model analyzer failures can make the run `partial_success`, but they do not block metadata, preview, thumb, hash, or image metrics.
 
@@ -95,7 +95,8 @@ Analyzer failures are isolated. Model analyzer failures can make the run `partia
 - `metadata` and `preview`: `ThreadPoolExecutor`, default 4 workers.
 - `thumb`, `hash`, and `image_metrics`: `ProcessPoolExecutor`, default 4 workers.
 - `embedding`: single worker with batch inference. `device=auto` prefers MPS, then CUDA, then CPU; default `mps_batch_size=4`, `cpu_batch_size=8`.
-- `face` and `iqa`: single worker for stable model/runtime ownership.
+- `face`: single worker for stable model/runtime ownership.
+- `iqa`: single worker with batched aesthetic inference. `aesthetic_device=auto` prefers MPS, then CUDA, then CPU; default `aesthetic_mps_batch_size=8`, `aesthetic_cpu_batch_size=8`.
 
 Workers only compute analyzer payloads. The main process remains the only writer for `task_state.json`, `manifest.jsonl`, and per-photo `analysis.json`.
 
@@ -110,4 +111,4 @@ scripts/smoke_phase1.sh /Users/liubin/Desktop/TestImage
 
 ## Mac mini M4 Model Policy
 
-Default model analyzers must be fast and smooth on Mac mini M4. Embedding uses Torch MPS when available; YuNet face, MediaPipe person mask, and PIQE IQA do not use Torch MPS in the current default path. Heavy IQA or face models should be used later only for candidate re-ranking, not the full first-pass pipeline.
+Default model analyzers must be fast and smooth on Mac mini M4. Embedding uses Torch MPS when available. IQA keeps PIQE on CPU and uses Torch MPS for the ViT-B/32 aesthetic predictor when available, with CPU fallback. Heavier aesthetic models such as ViT-L/14 should stay experimental or candidate-only, not the default first-pass pipeline.

@@ -357,10 +357,10 @@ class ReviewSetGenerator:
         for photo in group:
             norm = normalized.get(photo.display_id, {})
             blended = weighted([
-                (photo.score["overall"], 0.55),
-                (norm.get("technical_quality", photo.score["technical_quality"]), 0.2),
-                (norm.get("face_quality", photo.score["face_quality"]), 0.1),
-                (norm.get("iqa", photo.score["iqa"]), 0.1),
+                (photo.score["base_overall"], 0.75),
+                (norm.get("technical_quality", photo.score["technical_quality"]), 0.1),
+                (norm.get("face_quality", photo.score["face_quality"]), 0.05),
+                (norm.get("iqa", photo.score["iqa"]), 0.05),
                 (norm.get("composition", photo.score["composition"]), 0.05),
             ])
             photo.score["group_relative"] = blended
@@ -403,6 +403,7 @@ class ReviewSetGenerator:
             "ui_initial_state": recommendation_to_ui_state(recommendation),
             "similarity_to_cover": round(cosine(photo.embedding, cover.embedding), 6),
             "score": {k: round(v, 6) for k, v in photo.score.items()},
+            "compare_metrics": compare_metrics_payload(photo.analysis),
             "foreground_area_ratio": photo.foreground_area_ratio,
             "has_foreground_embedding": photo.foreground_embedding is not None,
             "has_background_embedding": photo.background_embedding is not None,
@@ -446,7 +447,9 @@ class ReviewSetGenerator:
         color = metrics.get("color") or {}
         composition_metrics = metrics.get("composition") or {}
         face = analysis.get("face_metrics") or {}
-        iqa = analysis.get("iqa_metrics", {}).get("metrics", {}).get("piqe", {})
+        iqa_metrics = analysis.get("iqa_metrics", {}).get("metrics", {})
+        iqa = iqa_metrics.get("piqe", {})
+        aesthetic = iqa_metrics.get("aesthetic", {})
 
         if not sharp or not exposure or not contrast or not color:
             missing.append("technical_quality")
@@ -481,11 +484,21 @@ class ReviewSetGenerator:
             missing.append("face_quality")
 
         piqe = iqa.get("score")
+        aesthetic_score = aesthetic.get("normalized_score")
         if piqe is None:
-            iqa_score = 0.5
-            missing.append("iqa")
+            piqe_score = None
+            if aesthetic_score is None:
+                missing.append("iqa")
         else:
-            iqa_score = clamp01(1.0 - safe_float(piqe) / 100.0)
+            piqe_score = clamp01(1.0 - safe_float(piqe) / 100.0)
+        if piqe_score is None and aesthetic_score is None:
+            iqa_score = 0.5
+        elif piqe_score is None:
+            iqa_score = safe_float(aesthetic_score, 0.5)
+        elif aesthetic_score is None:
+            iqa_score = piqe_score
+        else:
+            iqa_score = weighted([(piqe_score, 0.7), (safe_float(aesthetic_score), 0.3)])
 
         if not composition_metrics:
             missing.append("composition")
@@ -494,9 +507,10 @@ class ReviewSetGenerator:
         aspect_ratio = safe_float(composition_metrics.get("aspect_ratio"), 1.5)
         aspect_score = clamp01(1.0 - max(0.0, abs(aspect_ratio - 1.5) - 1.2) / 2.0)
         composition = weighted([(clamp01(center_ratio / 1.5), 0.45), (clamp01(1.0 - center_delta * 2.0), 0.35), (aspect_score, 0.2)])
-        overall = weighted([(technical, 0.45), (face_score, 0.2 if face_count else 0.05), (iqa_score, 0.2), (composition, 0.15)])
+        base_overall = weighted([(technical, 0.35), (face_score, 0.2 if face_count else 0.05), (iqa_score, 0.25), (composition, 0.2)])
         return {
-            "overall": overall,
+            "overall": base_overall,
+            "base_overall": base_overall,
             "technical_quality": technical,
             "face_quality": face_score,
             "iqa": iqa_score,
@@ -667,6 +681,70 @@ def normalize_group_scores(group: list[ReviewPhoto]) -> dict[str, dict[str, floa
         for photo in group:
             normalized[photo.display_id][category] = clamp01((photo.score[category] - low) / (high - low))
     return normalized
+
+
+def compare_metrics_payload(analysis: dict[str, Any]) -> dict[str, Any]:
+    metrics = analysis.get("image_metrics") or {}
+    sharp = metrics.get("sharpness") or {}
+    exposure = metrics.get("exposure") or {}
+    contrast = metrics.get("contrast") or {}
+    color = metrics.get("color") or {}
+    composition = metrics.get("composition") or {}
+    experimental = metrics.get("experimental") or {}
+    face = analysis.get("face_metrics") or {}
+    faces = face.get("faces") or []
+    largest_face = max(faces, key=lambda item: safe_float(item.get("area_ratio"))) if faces else {}
+    iqa_metrics = analysis.get("iqa_metrics", {}).get("metrics", {})
+    piqe = iqa_metrics.get("piqe", {})
+    aesthetic = iqa_metrics.get("aesthetic", {})
+
+    values = {
+        "sharpness": clamp01(math.log1p(safe_float(sharp.get("laplacian_var"))) / math.log1p(800)),
+        "center_sharpness": clamp01(safe_float(sharp.get("center_sharpness_ratio"), 1.0) / 1.5),
+        "exposure_clip": clamp01(1.0 - safe_float(exposure.get("shadow_clip_ratio")) * 8.0 - safe_float(exposure.get("highlight_clip_ratio")) * 10.0),
+        "brightness": clamp01(1.0 - abs(safe_float(exposure.get("brightness_mean"), 127.5) - 127.5) / 127.5),
+        "contrast": clamp01(safe_float(contrast.get("contrast_std_ratio")) / 0.22),
+        "dynamic_range": clamp01(safe_float(exposure.get("dynamic_range_p05_p95")) / 0.45),
+        "saturation": clamp01(1.0 - abs(safe_float(color.get("saturation_mean"), 0.35) - 0.35) / 0.45),
+        "color_cast": clamp01(1.0 - safe_float(color.get("color_cast_strength")) * 1.5),
+        "piqe": clamp01(1.0 - safe_float(piqe.get("score")) / 100.0) if piqe.get("score") is not None else None,
+        "aesthetic": clamp01(safe_float(aesthetic.get("normalized_score"))) if aesthetic.get("normalized_score") is not None else None,
+        "face_sharpness": clamp01(math.log1p(safe_float(largest_face.get("sharpness_laplacian_var"))) / math.log1p(900)) if largest_face else None,
+        "face_size": clamp01(safe_float(largest_face.get("area_ratio")) / 0.04) if largest_face else None,
+        "face_alignment": clamp01(safe_float(largest_face.get("alignment_score"))) if largest_face else None,
+        "center_brightness": clamp01(1.0 - abs(safe_float(composition.get("center_brightness_delta"))) / 255.0 * 2.0),
+        "aspect": clamp01(1.0 - max(0.0, abs(safe_float(composition.get("aspect_ratio"), 1.5) - 1.5) - 1.2) / 2.0),
+    }
+    raw = {
+        "brightness_mean": exposure.get("brightness_mean"),
+        "brightness_p05": exposure.get("brightness_p05"),
+        "brightness_p50": exposure.get("brightness_median"),
+        "brightness_p95": exposure.get("brightness_p95"),
+        "brightness_histogram": exposure.get("brightness_histogram"),
+        "brightness_histogram_16": exposure.get("brightness_histogram_16"),
+        "rgb_histogram": exposure.get("rgb_histogram"),
+        "shadow_clip_ratio": exposure.get("shadow_clip_ratio"),
+        "highlight_clip_ratio": exposure.get("highlight_clip_ratio"),
+        "laplacian_var": sharp.get("laplacian_var"),
+        "center_sharpness_ratio": sharp.get("center_sharpness_ratio"),
+        "contrast_std_ratio": contrast.get("contrast_std_ratio"),
+        "dynamic_range_p05_p95": exposure.get("dynamic_range_p05_p95"),
+        "saturation_mean": color.get("saturation_mean"),
+        "color_cast_strength": color.get("color_cast_strength"),
+        "piqe": piqe.get("score"),
+        "aesthetic": aesthetic.get("normalized_score"),
+        "face_count": face.get("face_count"),
+        "face_area_ratio": largest_face.get("area_ratio") if largest_face else None,
+        "face_sharpness_laplacian_var": largest_face.get("sharpness_laplacian_var") if largest_face else None,
+        "face_alignment_score": largest_face.get("alignment_score") if largest_face else None,
+        "center_brightness_delta": composition.get("center_brightness_delta"),
+        "aspect_ratio": composition.get("aspect_ratio"),
+        "noise_proxy": experimental.get("noise_proxy"),
+    }
+    return {
+        "values": {key: round(value, 6) for key, value in values.items() if value is not None},
+        "raw": {key: value for key, value in raw.items() if value is not None},
+    }
 
 
 def percentile(values: list[float], pct: float) -> float:

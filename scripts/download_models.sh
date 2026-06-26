@@ -12,6 +12,7 @@ HF_BASE="${HF_BASE:-https://hf-mirror.com}"
 HF_FALLBACK_BASE="${HF_FALLBACK_BASE:-https://huggingface.co}"
 OPENCV_BASE="${OPENCV_BASE:-https://github.com/opencv/opencv_zoo/raw/main}"
 PYIQA_BASE="${PYIQA_BASE:-https://hf-mirror.com/chaofengc/IQA-PyTorch-Weights/resolve/main}"
+AESTHETIC_BASE="${AESTHETIC_BASE:-https://raw.githubusercontent.com/LAION-AI/aesthetic-predictor/main}"
 
 mkdir -p "$MODEL_DIR"
 TMP_LIST="$(mktemp -t cullary-models.XXXXXX)"
@@ -45,6 +46,9 @@ hf openai/clip-vit-base-patch32 tokenizer_config.json hf-direct/openai__clip-vit
 hf openai/clip-vit-base-patch32 vocab.json hf-direct/openai__clip-vit-base-patch32
 hf openai/clip-vit-base-patch32 merges.txt hf-direct/openai__clip-vit-base-patch32
 hf openai/clip-vit-base-patch32 pytorch_model.bin hf-direct/openai__clip-vit-base-patch32
+add "$AESTHETIC_BASE/sa_0_4_vit_b_32_linear.pth" \
+  "$AESTHETIC_BASE/sa_0_4_vit_b_32_linear.pth" \
+  "laion-aesthetic/sa_0_4_vit_b_32_linear.pth"
 
 if [ "${INCLUDE_CLIP_L14:-0}" = "1" ]; then
   # Optional aesthetic predictor encoder: OpenAI CLIP ViT-L/14.
@@ -56,6 +60,9 @@ if [ "${INCLUDE_CLIP_L14:-0}" = "1" ]; then
   hf openai/clip-vit-large-patch14 vocab.json hf-direct/openai__clip-vit-large-patch14
   hf openai/clip-vit-large-patch14 merges.txt hf-direct/openai__clip-vit-large-patch14
   hf openai/clip-vit-large-patch14 pytorch_model.bin hf-direct/openai__clip-vit-large-patch14
+  add "$AESTHETIC_BASE/sa_0_4_vit_l_14_linear.pth" \
+    "$AESTHETIC_BASE/sa_0_4_vit_l_14_linear.pth" \
+    "laion-aesthetic/sa_0_4_vit_l_14_linear.pth"
 fi
 
 # Embedding: DINOv2 small/base.
