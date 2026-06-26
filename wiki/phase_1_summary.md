@@ -254,9 +254,10 @@ max_face_count: 3
 
 职责：
 
-- 使用 PIQE 输出无参考图像质量分数。
+- 使用 PIQE 输出无参考图像质量分数；当前 pipeline 另接入 LAION aesthetic predictor ViT-B/32 作为同一 IQA 维度的补充评分项。
 - 默认输入长边：512。
-- 分数方向：`lower_is_better`。
+- PIQE 分数方向：`lower_is_better`。
+- aesthetic 归一化分数方向：`higher_is_better`。
 
 执行策略：
 
@@ -543,6 +544,16 @@ experimental:
     "piqe": {
       "score": 44.326324,
       "direction": "lower_is_better"
+    },
+    "aesthetic": {
+      "score": 5.812345,
+      "normalized_score": 0.581235,
+      "direction": "higher_is_better",
+      "model": "laion-aesthetic-predictor-v1",
+      "clip_model": "openai/clip-vit-base-patch32",
+      "clip_head": "vit_b_32",
+      "device": "mps",
+      "batch_size": 8
     }
   }
 }

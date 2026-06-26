@@ -90,6 +90,7 @@ pub fn start_pipeline(folder: String, app: AppHandle, registry: State<'_, TaskRe
     let mut child = Command::new(python)
         .current_dir(&repo_root)
         .env("PYTHONPATH", python_path.to_string_lossy().to_string())
+        .env("PATH", gui_safe_path())
         .arg("-m")
         .arg("cullary.pipeline")
         .arg(folder_path.to_string_lossy().to_string())
@@ -518,6 +519,31 @@ fn require_dir(folder: &str) -> Result<PathBuf, String> {
         return Err(format!("folder is not a directory: {folder}"));
     }
     path.canonicalize().map_err(|err| format!("failed to resolve folder: {err}"))
+}
+
+fn gui_safe_path() -> String {
+    let current = env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<String> = current
+        .split(':')
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect();
+    for path in [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/opt/anaconda3/envs/hippo/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        if !parts.iter().any(|part| part == path) {
+            parts.push(path.to_string());
+        }
+    }
+    parts.join(":")
 }
 
 fn repo_root() -> Result<PathBuf, String> {

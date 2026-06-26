@@ -32,7 +32,19 @@
     "max_side": 1024
   },
   "iqa": {
+    "aesthetic": {
+      "clip_model": "openai/clip-vit-base-patch32",
+      "clip_model_path": "hf-direct/openai__clip-vit-base-patch32",
+      "enabled": true,
+      "head_path": "laion-aesthetic/sa_0_4_vit_b_32_linear.pth",
+      "model": "laion-aesthetic-predictor-v1"
+    },
+    "aesthetic_cpu_batch_size": 8,
+    "aesthetic_device": "auto",
+    "aesthetic_mps_batch_size": 8,
+    "batch_size": 8,
     "compare_metrics": [],
+    "device_fallback": true,
     "enabled": true,
     "max_side": 512,
     "metric": "piqe"
