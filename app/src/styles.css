@@ -35,9 +35,11 @@ code { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflo
 .stage-list { color: var(--muted); }
 .review-shell { height: 100vh; display: grid; grid-template-columns: 210px minmax(0, 1fr) 300px; grid-template-rows: 58px minmax(0, 1fr); background: var(--bg); }
 .topbar { grid-column: 1 / -1; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: rgba(14, 16, 13, .96); }
+.topbar-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .topbar strong { margin-right: 12px; }
 .topbar span { color: var(--muted); }
 .top-actions { display: flex; gap: 8px; }
+.back-project-button { width: 38px; min-width: 38px; height: 38px; min-height: 38px; padding: 0; display: grid; place-items: center; border-radius: 999px; color: var(--accent); font-size: 22px; line-height: 1; }
 .cluster-list { border-right: 1px solid var(--line); overflow: auto; padding: 12px; }
 .cluster-row { width: 100%; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left; margin-bottom: 10px; padding: 8px; }
 .cluster-row.active, .keeper-slot.active, .challenger.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(214, 255, 114, .22); }
@@ -414,3 +416,55 @@ ul { padding-left: 18px; }
 .compact-deck .deck-challenger-card:focus,
 .compact-deck .deck-challenger-card:hover { flex: 0 0 108px; width: 108px; min-width: 108px; max-width: 108px; height: 112px; min-height: 112px; max-height: 112px; padding: 6px; border-width: 1px; }
 .compact-deck .deck-challenger-card .image-frame { width: 100%; height: 98px; max-height: 98px; border-radius: 10px; }
+
+/* Current interaction model: explicit controls, stable deck geometry, no hover-only critical UI. */
+.compact-deck .delete-strip { grid-template-columns: minmax(0, 1fr); padding-right: 0; }
+.compact-deck .deck-action-rail { display: none; }
+.compact-deck .hero-photo { position: relative; overflow: hidden; padding: 0; }
+.compact-deck .hero-photo .zoom-surface { padding: 14px; }
+.hero-action-rail { position: absolute; right: 14px; top: 58px; z-index: 4; display: grid; gap: 7px; padding: 6px; border: 1px solid rgba(50,58,44,.75); border-radius: 999px; background: rgba(8,10,8,.78); backdrop-filter: blur(8px); }
+.hero-action-rail button { width: 48px; min-width: 48px; min-height: 34px; padding: 5px 0; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.deck-inspector .current-decision-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.deck-inspector .current-decision-row strong { color: var(--accent); font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.deck-inspector .state-line { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compare-mode .inspector { transform: translateX(270px); padding-left: 16px; opacity: 1; overflow: visible; transition: transform .18s ease; }
+.compare-mode.compare-inspector-open .inspector { transform: translateX(0); }
+.compare-mode .inspector::before { content: none; }
+.compare-mode .inspector:hover,
+.compare-mode .inspector:focus-within { transform: translateX(270px); }
+.compare-mode.compare-inspector-open .inspector:hover,
+.compare-mode.compare-inspector-open .inspector:focus-within { transform: translateX(0); }
+.compare-mode .inspector-toggle { position: absolute; left: 0; top: 50%; z-index: 3; width: 22px; min-width: 22px; height: 58px; min-height: 58px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: #10120f; color: var(--accent); font-size: 18px; transform: translate(-22px, -50%); box-shadow: -10px 0 24px rgba(0,0,0,.22); }
+.compare-mode .inspector-toggle:hover,
+.compare-mode .inspector-toggle:focus-visible { background: #171a15; }
+.compare-mode .inspector .reason-card { height: 100%; overflow: auto; padding-right: 4px; }
+.review-shell.compare-mode .action-toast { right: 28px; }
+
+/* Compare toolbar actions sit closer to the image center instead of hugging edges. */
+.compare-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 16px; }
+.compare-decision-actions,
+.compare-nav-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.compare-decision-actions { justify-self: start; margin-left: clamp(12px, 3vw, 72px); }
+.compare-nav-actions { justify-self: end; margin-right: clamp(12px, 3vw, 72px); }
+@media (max-width: 1100px) {
+  .compare-decision-actions { margin-left: 0; }
+  .compare-nav-actions { margin-right: 0; }
+}
+
+/* Compare inspector now participates in layout: open state gives it a real column,
+   so comparison panes resize instead of being covered by the inspector. */
+.review-shell.compare-mode { grid-template-columns: 200px minmax(0, 1fr) 22px; }
+.review-shell.compare-mode.cluster-collapsed { grid-template-columns: 54px minmax(0, 1fr) 22px; }
+.review-shell.compare-mode.compare-inspector-open { grid-template-columns: 200px minmax(0, 1fr) 292px; }
+.review-shell.compare-mode.cluster-collapsed.compare-inspector-open { grid-template-columns: 54px minmax(0, 1fr) 292px; }
+.compare-mode .inspector { position: relative; grid-column: 3; grid-row: 2; top: auto; right: auto; bottom: auto; z-index: 4; width: auto; min-width: 0; height: 100%; transform: none; padding: 12px; overflow: visible; box-shadow: none; }
+.compare-mode.compare-inspector-open .inspector,
+.compare-mode .inspector:hover,
+.compare-mode .inspector:focus-within,
+.compare-mode.compare-inspector-open .inspector:hover,
+.compare-mode.compare-inspector-open .inspector:focus-within { transform: none; }
+.compare-mode:not(.compare-inspector-open) .inspector { padding: 0; border-left-color: transparent; background: transparent; }
+.compare-mode:not(.compare-inspector-open) .inspector .reason-card { visibility: hidden; pointer-events: none; }
+.compare-mode .inspector-toggle { left: 0; transform: translate(0, -50%); }
+.compare-mode.compare-inspector-open .inspector-toggle { transform: translate(-22px, -50%); }
+.compare-mode.compare-inspector-open .workspace { padding-right: 0; }
