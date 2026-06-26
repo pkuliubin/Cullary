@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { mockFolder } from '../mock/mockReviewData.js';
 import { repository, resolveAssetPath } from './repository.js';
 import {
@@ -23,17 +23,19 @@ import {
   previousChallenger,
   replaceWithChallenger,
   resetZoom,
+  resetDeckZoom,
   selectChallenger,
   selectKeeper,
   selectSet,
   setDecisionState,
+  updateDeckZoom,
   updateZoom,
   applyPersistedDecisions,
   applyReviewProgress,
 } from './reviewState.js';
 
 function cloneState(state: any) {
-  return { ...state, decisions: new Map(state.decisions), completedSets: new Set(state.completedSets || []), compare: { ...state.compare, left: { ...state.compare.left }, right: { ...state.compare.right } } };
+  return { ...state, decisions: new Map(state.decisions), completedSets: new Set(state.completedSets || []), compare: { ...state.compare, left: { ...state.compare.left }, right: { ...state.compare.right } }, deckZoom: { ...(state.deckZoom || { scale: 1, x: 0, y: 0 }) } };
 }
 
 function decisionLabel(value: string) {
@@ -48,6 +50,11 @@ function decisionLabel(value: string) {
 
 function scoreText(photo: any) {
   const value = photo?.score?.overall;
+  return Number.isFinite(value) ? Math.round(value * 100) : '—';
+}
+
+function baseScoreText(photo: any) {
+  const value = photo?.score?.base_overall;
   return Number.isFinite(value) ? Math.round(value * 100) : '—';
 }
 
@@ -69,8 +76,31 @@ const scoreDimensionLabels: Record<string, string> = {
   iqa: 'IQA 质量',
   composition: '构图',
   face_quality: '人脸质量',
-  group_relative: '组内相对',
 };
+
+const scoreDimensionWeights: Record<string, number> = {
+  technical_quality: 0.35,
+  face_quality: 0.2,
+  iqa: 0.25,
+  composition: 0.2,
+};
+
+const compareMetricDefs = [
+  { key: 'sharpness', label: '整体清晰度', group: '技术', weight: 0.35 * 0.35 },
+  { key: 'exposure_clip', label: '曝光裁切', group: '技术', weight: 0.35 * 0.2 },
+  { key: 'brightness', label: '亮度居中', group: '技术', weight: 0.35 * 0.1 },
+  { key: 'contrast', label: '对比度', group: '技术', weight: 0.35 * 0.15 },
+  { key: 'dynamic_range', label: '动态范围', group: '技术', weight: 0.35 * 0.1 },
+  { key: 'color_cast', label: '色偏控制', group: '技术', weight: 0.35 * 0.1 },
+  { key: 'piqe', label: 'PIQE 质量', group: 'IQA', weight: 0.25 * 0.7 },
+  { key: 'aesthetic', label: '美学分', group: 'IQA', weight: 0.25 * 0.3 },
+  { key: 'face_sharpness', label: '人脸清晰度', group: '人脸', weight: 0.2 * 0.4 },
+  { key: 'face_size', label: '人脸面积', group: '人脸', weight: 0.2 * 0.25 },
+  { key: 'face_alignment', label: '人脸角度', group: '人脸', weight: 0.2 * 0.2 },
+  { key: 'center_sharpness', label: '中心清晰度', group: '构图', weight: 0.2 * 0.45 },
+  { key: 'center_brightness', label: '中心亮度', group: '构图', weight: 0.2 * 0.35 },
+  { key: 'aspect', label: '画幅比例', group: '构图', weight: 0.2 * 0.2 },
+];
 
 function scoreDimensions(left: any, right: any) {
   const leftScore = left?.score || {};
@@ -83,7 +113,55 @@ function scoreDimensions(left: any, right: any) {
       return { key, label, left: Math.round(leftValue * 100), right: Math.round(rightValue * 100), diff: Math.round((rightValue - leftValue) * 100) };
     })
     .filter(Boolean)
-    .sort((a: any, b: any) => Math.abs(b.diff) - Math.abs(a.diff));
+    .sort((a: any, b: any) => Math.abs(b.diff * (scoreDimensionWeights[b.key] || 0.1)) - Math.abs(a.diff * (scoreDimensionWeights[a.key] || 0.1)));
+}
+
+function compareMetricRows(left: any, right: any) {
+  const leftValues = left?.compare_metrics?.values || {};
+  const rightValues = right?.compare_metrics?.values || {};
+  return compareMetricDefs
+    .map((def) => {
+      const leftValue = Number(leftValues[def.key]);
+      const rightValue = Number(rightValues[def.key]);
+      if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return null;
+      const diff = rightValue - leftValue;
+      return { ...def, left: Math.round(leftValue * 100), right: Math.round(rightValue * 100), diff: Math.round(diff * 100), impact: diff * def.weight };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => Math.abs(b.impact) - Math.abs(a.impact));
+}
+
+function brightnessHistogram(photo: any) {
+  const hist = photo?.compare_metrics?.raw?.brightness_histogram || photo?.compare_metrics?.raw?.brightness_histogram_16;
+  if (Array.isArray(hist) && hist.length) return hist.map((v: any) => Math.max(0, Number(v) || 0));
+  const raw = photo?.compare_metrics?.raw || {};
+  const p05 = Number(raw.brightness_p05); const p50 = Number(raw.brightness_p50); const p95 = Number(raw.brightness_p95);
+  if (![p05, p50, p95].every(Number.isFinite)) return [];
+  const bins = Array.from({ length: 64 }, (_, idx) => {
+    const center = (idx + 0.5) * 4;
+    const width = Math.max(18, (p95 - p05) / 2.4);
+    return Math.exp(-0.5 * Math.pow((center - p50) / width, 2));
+  });
+  const total = bins.reduce((sum, value) => sum + value, 0) || 1;
+  return bins.map((value) => value / total);
+}
+
+function rgbHistogram(photo: any) {
+  const hist = photo?.compare_metrics?.raw?.rgb_histogram;
+  if (!hist || !Array.isArray(hist.r) || !Array.isArray(hist.g) || !Array.isArray(hist.b)) return null;
+  return {
+    r: hist.r.map((v: any) => Math.max(0, Number(v) || 0)),
+    g: hist.g.map((v: any) => Math.max(0, Number(v) || 0)),
+    b: hist.b.map((v: any) => Math.max(0, Number(v) || 0)),
+  };
+}
+
+function clipText(photo: any) {
+  const raw = photo?.compare_metrics?.raw || {};
+  const shadow = Number(raw.shadow_clip_ratio);
+  const highlight = Number(raw.highlight_clip_ratio);
+  if (!Number.isFinite(shadow) || !Number.isFinite(highlight)) return null;
+  return `阴影 ${(shadow * 100).toFixed(1)}% · 高光 ${(highlight * 100).toFixed(1)}%`;
 }
 
 function photoBytes(photo: any) {
@@ -135,6 +213,9 @@ export default function App() {
     applyPersistedDecisions(next, decisions);
     applyReviewProgress(next, progress);
     setState(next);
+  };
+  const returnToStart = () => {
+    setState((prev: any) => ({ ...createReviewState({ folder: prev.folder }), screen: 'start' }));
   };
 
   const appendDecision = (draft: any, photo: any, userState: string, previous: string, source = 'manual') => {
@@ -198,8 +279,8 @@ export default function App() {
   }, [state.mode, state.screen]);
 
   if (state.screen === 'processing') return <ProcessingScreen state={state} loadMockReview={loadMockReview} mutate={mutate} />;
-  if (state.screen === 'review' && set) return <ReviewScreen state={state} mutate={mutate} saveDecision={saveDecision} appendDecision={appendDecision} />;
-  if (state.screen === 'staging') return <StagingScreen state={state} mutate={mutate} />;
+  if (state.screen === 'review' && set) return <ReviewScreen state={state} mutate={mutate} saveDecision={saveDecision} appendDecision={appendDecision} returnToStart={returnToStart} />;
+  if (state.screen === 'staging') return <StagingScreen state={state} mutate={mutate} returnToStart={returnToStart} />;
   return <StartScreen state={state} mutate={mutate} loadMockReview={loadMockReview} />;
 }
 
@@ -287,7 +368,9 @@ function buildPipelineProgress(events: any[], groups: any[], status: string) {
   return { latest, stagePercents, groupPercents, currentGroup, currentSubstage, overallPercent };
 }
 
-function ReviewScreen({ state, mutate, saveDecision, appendDecision }: any) {
+function ReviewScreen({ state, mutate, saveDecision, appendDecision, returnToStart }: any) {
+  const [clusterCollapsed, setClusterCollapsed] = useState(false);
+  const [compareInspectorOpen, setCompareInspectorOpen] = useState(false);
   useEffect(() => {
     if (!state.stagePlan) refreshStagePlan();
   }, [state.folder]);
@@ -296,21 +379,24 @@ function ReviewScreen({ state, mutate, saveDecision, appendDecision }: any) {
     const nextPlan = await repository.dryRunStage(state.folder);
     mutate((draft: any) => { draft.stagePlan = nextPlan; });
   };
-  return <main className="review-shell">
-    <header className="topbar"><div><strong>Cullary</strong><span>{state.summary?.review_set_count || state.reviewSets.length} 组</span></div><div className="top-actions"><button onClick={() => mutate((d: any) => { d.mode = 'deck'; })}>组视图</button><button onClick={() => mutate((d: any) => { d.mode = 'grid'; })}>查看全部</button><button onClick={() => mutate((d: any) => { d.screen = 'staging'; })}>全局最终确认</button></div></header>
-    <aside className="cluster-list"><ClusterList state={state} mutate={mutate} /></aside>
-    <section className="workspace">{state.lastAction && <div className="action-toast">{state.lastAction}</div>}{state.mode === 'compare' ? <CompareView state={state} mutate={mutate} /> : state.mode === 'grid' ? <GridView state={state} /> : <DeckView state={state} mutate={mutate} saveDecision={saveDecision} />}</section>
-    <aside className="inspector">{state.mode === 'compare' ? <CompareInspector state={state} mutate={mutate} appendDecision={appendDecision} /> : <Inspector state={state} mutate={mutate} saveDecision={saveDecision} refreshStagePlan={refreshStagePlan} />}</aside>
+  return <main className={`review-shell ${clusterCollapsed ? 'cluster-collapsed' : ''} ${state.mode === 'compare' ? 'compare-mode' : ''} ${compareInspectorOpen ? 'compare-inspector-open' : ''}`}>
+    <header className="topbar"><div className="topbar-title"><button className="back-project-button" title="返回主页面" aria-label="返回主页面" onClick={returnToStart}>‹</button><strong>Cullary</strong><span>{state.summary?.review_set_count || state.reviewSets.length} 组</span></div><div className="top-actions"><button onClick={() => mutate((d: any) => { d.mode = 'deck'; })}>组视图</button><button onClick={() => mutate((d: any) => { d.mode = 'grid'; })}>查看全部</button><button onClick={() => mutate((d: any) => { d.screen = 'staging'; })}>全局最终确认</button></div></header>
+    <aside className="cluster-list"><button className="cluster-toggle" title={clusterCollapsed ? '展开分组' : '折叠分组'} aria-label={clusterCollapsed ? '展开分组' : '折叠分组'} onClick={() => setClusterCollapsed(!clusterCollapsed)}>{clusterCollapsed ? '›' : '‹'}</button><ClusterList state={state} mutate={mutate} collapsed={clusterCollapsed} /></aside>
+    <section className="workspace">{state.lastAction && <div className="action-toast">{state.lastAction}</div>}{state.mode === 'compare' ? <CompareView state={state} mutate={mutate} appendDecision={appendDecision} /> : state.mode === 'grid' ? <GridView state={state} /> : <DeckView state={state} mutate={mutate} saveDecision={saveDecision} />}</section>
+    <aside className="inspector">
+      {state.mode === 'compare' && <button className="inspector-toggle" title={compareInspectorOpen ? '隐藏对比信息' : '显示对比信息'} aria-label={compareInspectorOpen ? '隐藏对比信息' : '显示对比信息'} onClick={() => setCompareInspectorOpen(!compareInspectorOpen)}>{compareInspectorOpen ? '›' : '‹'}</button>}
+      {state.mode === 'compare' ? <CompareInspector state={state} /> : <Inspector state={state} mutate={mutate} saveDecision={saveDecision} refreshStagePlan={refreshStagePlan} />}
+    </aside>
   </main>;
 }
 
-function ClusterList({ state, mutate }: any) {
+function ClusterList({ state, mutate, collapsed = false }: any) {
   return state.reviewSets.map((set: any, index: number) => {
     const cover = photoById(set, set.cover_display_id) || set.photos[0];
     const active = index === state.activeSetIndex;
     return <button key={set.review_set_id} className={`cluster-row ${active ? 'active' : ''}`} onClick={() => mutate((draft: any) => selectSet(draft, index))}>
       <Image state={state} photo={cover} />
-      <span><strong>{set.photo_count} 张</strong><small>{set.set_type}</small></span>
+      {!collapsed && <span><strong>{set.photo_count} 张</strong><small>{set.set_type}</small></span>}
     </button>;
   });
 }
@@ -321,34 +407,53 @@ function DeckView({ state, mutate, saveDecision }: any) {
   const keepers = keeperPhotos(state);
   const challengers = challengerPhotos(state);
   const selectedState = decisionFor(state, selected);
-  return <div className="deck-view schema11-deck">
-    <section className="pool-section"><div className="pool-title"><strong>保留</strong><span>当前决定保留的照片</span></div><div className="keeper-slots pool-strip">{keepers.map((photo: any) => <PhotoCard key={photo.display_id} state={state} photo={photo} active={selected?.display_id === photo.display_id} label="保留" onClick={() => mutate((d: any) => selectKeeper(d, photo.display_id))} extra={<button className="mini-action" onClick={(event) => { event.stopPropagation(); saveDecision(photo, 'user_challenger', 'move_to_delete'); }}>待删除</button>} />)}</div></section>
+  const canCompare = Boolean(activeKeeper(state) && activeChallenger(state));
+  return <div className="deck-view schema11-deck compact-deck">
+    <section className="pool-section deck-pool keep-strip" aria-label="保留照片">
+      <div className="pool-side-label">保留</div>
+      <div className="keeper-slots pool-strip">{keepers.map((photo: any) => <PhotoCard key={photo.display_id} state={state} photo={photo} active={selected?.display_id === photo.display_id} label="保留" onClick={() => mutate((d: any) => selectKeeper(d, photo.display_id))} extra={<button className="mini-action icon-action danger-action" title="移动到待删除" aria-label="移动到待删除" onClick={(event) => { event.stopPropagation(); saveDecision(photo, 'user_challenger', 'move_to_delete'); }}>↓</button>} />)}</div>
+    </section>
     <div className={`hero-photo ${selectedState}`}>
-      <Image state={state} photo={selected} kind="preview" className="preview-image" />
+      <ZoomablePhoto state={state} mutate={mutate} photo={selected} view={state.deckZoom || { scale: 1, x: 0, y: 0 }} update={(draft: any, updater: any) => updateDeckZoom(draft, updater)} />
+      <button className="hero-reset-button" title="重置视图" aria-label="重置视图" onClick={() => mutate(resetDeckZoom)}>↺</button>
       <span className={`decision-pill ${selectedState}`}>{decisionLabel(selectedState)}{isAlternate(set, selected) ? ' · 备选' : ''}</span>
+      <div className="hero-action-rail" aria-label="当前大图操作">
+        <button className="primary" disabled={!canCompare} onClick={() => mutate((d: any) => { d.mode = 'compare'; })}>对比</button>
+        <button className={selectedState === 'user_keep' ? 'selected-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_keep')}>保留</button>
+        <button className={selectedState !== 'user_keep' ? 'danger-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_challenger')}>待删</button>
+      </div>
     </div>
-    <section className="pool-section"><div className="pool-title"><strong>待删除</strong><span>确认后会移入安全暂存区</span></div><div className="challenger-strip">{challengers.map((photo: any, index: number) => <ChallengerCard key={photo.display_id} state={state} photo={photo} index={index} active={selected?.display_id === photo.display_id} onClick={() => mutate((d: any) => selectChallenger(d, photo.display_id))} />)}</div></section>
-    <div className="deck-actions review-action-bar"><button className={selectedState === 'user_keep' ? 'selected-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_keep')}>保留</button><button className={selectedState !== 'user_keep' ? 'danger-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_challenger')}>待删除</button><button className="primary" disabled={!activeKeeper(state) || !activeChallenger(state)} onClick={() => mutate((d: any) => { d.mode = 'compare'; })}>进入对比</button></div>
+    <section className="pool-section deck-pool delete-strip" aria-label="待删除照片">
+      <div className="pool-side-label danger-title">待删除</div>
+      <div className="challenger-strip">{challengers.map((photo: any, index: number) => <ChallengerCard key={photo.display_id} state={state} photo={photo} index={index} active={selected?.display_id === photo.display_id} onClick={() => mutate((d: any) => selectChallenger(d, photo.display_id))} />)}</div>
+    </section>
   </div>;
 }
 
 function PhotoCard({ state, photo, active, label, onClick, extra }: any) {
-  return <button className={`photo-card ${active ? 'active' : ''} ${decisionFor(state, photo)}`} onClick={onClick}>
+  const status = compactPhotoStatus(state, photo, label);
+  return <button className={`deck-photo-card photo-card ${active ? 'active' : ''} ${decisionFor(state, photo)}`} onClick={onClick}>
     <Image state={state} photo={photo} />
-    <span><strong>{photo.display_id}</strong><small>{label} · 评分 {scoreText(photo)}</small></span>
+    <span><strong>{photo.display_id}</strong><small>{status}</small></span>
     {extra}
   </button>;
 }
 
 function ChallengerCard({ state, photo, index, active, onClick }: any) {
-  const set = activeSet(state);
-  const meta = challengerMeta(set, photo.display_id);
-  const delta = formatDelta(meta?.score_delta);
-  return <button className={`challenger ${active ? 'active' : ''} ${isAlternate(set, photo) ? 'alternate' : ''}`} onClick={onClick}>
+  const status = compactPhotoStatus(state, photo, `${index + 1}`);
+  return <button className={`deck-challenger-card challenger ${active ? 'active' : ''} ${isAlternate(activeSet(state), photo) ? 'alternate' : ''}`} onClick={onClick}>
     <Image state={state} photo={photo} />
-    <span className="thumb-badge">{index + 1} · {isAlternate(set, photo) ? '备选' : decisionLabel(decisionFor(state, photo))}</span>
-    <small>{delta ? `Δ ${delta}` : `评分 ${scoreText(photo)}`}</small>
+    <span className="thumb-badge">{status}</span>
   </button>;
+}
+
+function compactPhotoStatus(state: any, photo: any, fallback: string) {
+  const set = activeSet(state);
+  const meta = challengerMeta(set, photo?.display_id);
+  const delta = formatDelta(meta?.score_delta);
+  const stateLabel = isAlternate(set, photo) ? '备选' : decisionFor(state, photo) === 'user_undecided' ? '待确认' : decisionLabel(decisionFor(state, photo));
+  if (delta) return `${stateLabel} · Δ ${delta}`;
+  return stateLabel || fallback;
 }
 
 function GridView({ state }: any) {
@@ -356,39 +461,17 @@ function GridView({ state }: any) {
   return <div className="grid-view">{set.photos.map((photo: any) => { const value = decisionFor(state, photo); return <button key={photo.display_id} className={`photo-tile ${value}`}><Image state={state} photo={photo} /><span>{photo.rank}. {photo.display_id}</span><small>{decisionLabel(value)}{isAlternate(set, photo) ? ' · 备选' : ''}</small></button>; })}</div>;
 }
 
-function CompareView({ state, mutate }: any) {
+function CompareView({ state, mutate, appendDecision }: any) {
   const keeper = activeKeeper(state); const challenger = activeChallenger(state);
+  useEffect(() => {
+    if (!keeper || !challenger) {
+      mutate((draft: any) => { draft.mode = 'deck'; });
+    }
+  }, [keeper?.display_id, challenger?.display_id]);
   if (!keeper || !challenger) return <div className="empty">本组已无待删除照片。</div>;
   const keeperRatio = keeper.preview_width / Math.max(keeper.preview_height, 1);
   const challengerRatio = challenger.preview_width / Math.max(challenger.preview_height, 1);
   const layout = keeperRatio >= 1.7 && challengerRatio >= 1.7 ? 'stacked' : 'side-by-side';
-  return <div className={`compare-view ${layout}`}><div className="compare-toolbar"><button onClick={() => mutate(previousChallenger)}>上一张</button><button onClick={() => mutate(nextChallenger)}>下一张</button><button onClick={() => mutate((d: any) => { d.compare.linked = !d.compare.linked; })}>{state.compare.linked ? '同步开' : '同步关'}</button><button onClick={() => mutate(resetZoom)}>重置</button><button onClick={() => mutate((d: any) => { d.mode = 'deck'; })}>返回</button></div><ComparePane state={state} mutate={mutate} side="left" photo={keeper} label="保留" /><ComparePane state={state} mutate={mutate} side="right" photo={challenger} label="待删除" /></div>;
-}
-
-function ComparePane({ state, mutate, side, photo, label }: any) {
-  const view = state.compare.linked ? state.compare : state.compare[side];
-  const [drag, setDrag] = useState<any>(null);
-  return <div className={`compare-pane ${decisionFor(state, photo)}`} onWheel={(event) => { event.preventDefault(); const factor = event.deltaY < 0 ? 1.025 : 0.975; mutate((d: any) => updateZoom(d, side, (v: any) => ({ ...v, scale: Math.max(1, Math.min(4, v.scale * factor)) }))); }} onPointerDown={(event) => setDrag({ x: event.clientX, y: event.clientY })} onPointerMove={(event) => { if (!drag) return; const dx = event.clientX - drag.x; const dy = event.clientY - drag.y; setDrag({ x: event.clientX, y: event.clientY }); mutate((d: any) => updateZoom(d, side, (v: any) => ({ ...v, x: v.x + dx, y: v.y + dy }))); }} onPointerUp={() => setDrag(null)} onPointerLeave={() => setDrag(null)}><div className="compare-pane-label"><strong>{label}</strong><span>{photo.display_id}</span><em>{decisionLabel(decisionFor(state, photo))}</em></div><div className="zoom-surface" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}><Image state={state} photo={photo} kind="preview" /></div></div>;
-}
-
-function Inspector({ state, mutate, saveDecision, refreshStagePlan }: any) {
-  const set = activeSet(state); const photo = activePhoto(state); const value = decisionFor(state, photo); const meta = challengerMeta(set, photo?.display_id); const keepers = keeperPhotos(state); const deletes = deletePhotos(state);
-  const totalBytes = sourceBytesForPhotos(set.photos || []);
-  const keepBytes = sourceBytesForPhotos(keepers);
-  const done = isSetCompleted(state, set);
-  const toggleCompleted = () => {
-    const nextCompleted = new Set(state.completedSets || []);
-    if (nextCompleted.has(set.review_set_id)) nextCompleted.delete(set.review_set_id);
-    else nextCompleted.add(set.review_set_id);
-    repository.saveReviewProgress(state.folder, { schema_version: '1.0', completed_review_set_ids: [...nextCompleted] });
-    mutate((draft: any) => { draft.completedSets = nextCompleted; });
-  };
-  return <div className="reason-card"><p className="eyebrow">本组</p><div className="simple-ratio"><strong>{keepers.length}/{set.photo_count}</strong><span>已保留 / 本组照片</span></div><p className="muted">保留空间：{formatBytes(keepBytes)} / {formatBytes(totalBytes)}</p><p className="muted">当前有 {deletes.length} 张标记为待删除。应用最终确认后，它们会移入安全暂存区，仍可撤销。</p><button className={done ? 'wide selected-action' : 'wide'} onClick={toggleCompleted}>{done ? '本组已完成' : '标记本组完成'}</button><button className="wide" onClick={refreshStagePlan}>重新计算全局空间</button><hr /><p className="eyebrow">当前照片</p><h3>{photo.display_id}</h3><p className={`state-line ${value}`}>{decisionLabel(value)}{isAlternate(set, photo) ? ' · 备选' : ''}</p>{meta && <p className="muted">相似度 {Math.round((meta.similarity_to_primary || 0) * 100)} · 分差 {formatDelta(meta.score_delta) || '—'}</p>}<ReasonList items={photo.reason_summary_zh} /><p className="eyebrow">弱点</p><ReasonList items={photo.weakness_summary_zh} /><p className="score">评分 {scoreText(photo)}</p></div>;
-}
-
-function CompareInspector({ state, mutate, appendDecision }: any) {
-  const keeper = activeKeeper(state); const challenger = activeChallenger(state); const set = activeSet(state); const meta = challengerMeta(set, challenger?.display_id);
-  const dimensions = scoreDimensions(keeper, challenger);
   const persistChange = (draft: any, photo: any, userState: string, previous: string, source: string) => appendDecision(draft, photo, userState, previous, source);
   const replace = () => mutate((draft: any) => {
     const result = replaceWithChallenger(draft);
@@ -397,7 +480,7 @@ function CompareInspector({ state, mutate, appendDecision }: any) {
     persistChange(draft, result.keeper, 'user_challenger', result.previousKeeper, 'replace');
     persistChange(draft, result.challenger, 'user_keep', result.previousChallenger, 'replace');
     draft.stagePlan = null;
-    draft.lastAction = `${result.challenger.display_id}: 已设为保留`;
+    draft.lastAction = `${result.challenger.display_id}: 已替换保留`;
   });
   const keepBothAction = () => mutate((draft: any) => {
     const result = keepBoth(draft);
@@ -408,18 +491,136 @@ function CompareInspector({ state, mutate, appendDecision }: any) {
     draft.stagePlan = null;
     draft.lastAction = `${result.challenger.display_id}: 已加入保留`;
   });
-  const keepDelete = () => mutate((draft: any) => {
-    const current = activeChallenger(draft);
-    if (!current) return;
-    draft.lastAction = `${current.display_id}: 保持待删除`;
-    nextChallenger(draft);
-  });
+  return <div className={`compare-view ${layout}`}><div className="compare-toolbar"><div className="compare-decision-actions"><button className="primary" onClick={replace}>替换保留</button><button onClick={keepBothAction}>两张都保留</button></div><div className="compare-nav-actions"><button onClick={() => mutate(previousChallenger)}>上一张</button><button onClick={() => mutate(nextChallenger)}>下一张</button><button onClick={() => mutate((d: any) => { d.compare.linked = !d.compare.linked; })}>{state.compare.linked ? '同步开' : '同步关'}</button><button onClick={() => mutate(resetZoom)}>重置</button><button onClick={() => mutate((d: any) => { d.mode = 'deck'; })}>返回</button></div></div><ComparePane state={state} mutate={mutate} side="left" photo={keeper} label="保留" /><ComparePane state={state} mutate={mutate} side="right" photo={challenger} label="待删除" /></div>;
+}
+
+function ComparePane({ state, mutate, side, photo, label }: any) {
+  const view = state.compare.linked ? state.compare : state.compare[side];
+  return <div className={`compare-pane ${decisionFor(state, photo)}`}><div className="compare-pane-label"><strong>{label}</strong><span>{photo.display_id}</span><em>{decisionLabel(decisionFor(state, photo))}</em></div><ZoomablePhoto state={state} mutate={mutate} photo={photo} view={view} update={(draft: any, updater: any) => updateZoom(draft, side, updater)} /></div>;
+}
+
+function ZoomablePhoto({ state, mutate, photo, view, update }: any) {
+  const [drag, setDrag] = useState<any>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [fitSize, setFitSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const element = surfaceRef.current;
+    if (!element || !photo) return;
+    const measure = () => {
+      const rect = element.getBoundingClientRect();
+      const imageWidth = Number(photo.preview_width) || 1;
+      const imageHeight = Number(photo.preview_height) || 1;
+      const fit = Math.min(rect.width / imageWidth, rect.height / imageHeight);
+      setFitSize({ width: imageWidth * fit, height: imageHeight * fit });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [photo?.display_id, photo?.preview_width, photo?.preview_height]);
+  return <div ref={surfaceRef} className="zoom-surface" onWheel={(event) => { event.preventDefault(); const factor = event.deltaY < 0 ? 1.04 : 0.96; mutate((d: any) => update(d, (v: any) => ({ ...v, scale: Math.max(1, Math.min(6, v.scale * factor)) }))); }} onPointerDown={(event) => setDrag({ x: event.clientX, y: event.clientY })} onPointerMove={(event) => { if (!drag) return; const dx = event.clientX - drag.x; const dy = event.clientY - drag.y; setDrag({ x: event.clientX, y: event.clientY }); mutate((d: any) => update(d, (v: any) => ({ ...v, x: v.x + dx, y: v.y + dy }))); }} onPointerUp={() => setDrag(null)} onPointerLeave={() => setDrag(null)}>
+    <div className="zoom-content" style={{ width: `${fitSize.width}px`, height: `${fitSize.height}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}><Image state={state} photo={photo} kind="preview" /></div>
+  </div>;
+}
+
+function Inspector({ state, mutate, saveDecision, refreshStagePlan }: any) {
+  const set = activeSet(state); const photo = activePhoto(state); const value = decisionFor(state, photo); const meta = challengerMeta(set, photo?.display_id); const keepers = keeperPhotos(state);
+  const totalBytes = sourceBytesForPhotos(set.photos || []);
+  const keepBytes = sourceBytesForPhotos(keepers);
+  const done = isSetCompleted(state, set);
+  const toggleCompleted = () => {
+    const nextCompleted = new Set(state.completedSets || []);
+    if (nextCompleted.has(set.review_set_id)) nextCompleted.delete(set.review_set_id);
+    else nextCompleted.add(set.review_set_id);
+    repository.saveReviewProgress(state.folder, { schema_version: '1.0', completed_review_set_ids: [...nextCompleted] });
+    mutate((draft: any) => { draft.completedSets = nextCompleted; });
+  };
+  return <div className="reason-card deck-inspector"><p className="eyebrow">本组进度</p><div className="simple-ratio"><strong>{keepers.length}/{set.photo_count}</strong><span>已保留 · {formatBytes(keepBytes)} / {formatBytes(totalBytes)}</span></div><button className={done ? 'wide selected-action' : 'wide'} onClick={toggleCompleted}>{done ? '本组已完成' : '标记本组完成'}</button><hr /><p className="eyebrow">当前大图</p><h3>{photo.display_id}</h3><div className="current-decision-row"><span className={`state-line ${value}`}>{decisionLabel(value)}{isAlternate(set, photo) ? ' · 备选' : ''}</span><strong>{scoreText(photo)}</strong></div>{meta && <p className="muted">相似度 {Math.round((meta.similarity_to_primary || 0) * 100)} · 分差 {formatDelta(meta.score_delta) || '—'}</p>}<p className="eyebrow">保留依据</p><ReasonList items={photo.reason_summary_zh} /><p className="eyebrow">主要弱点</p><ReasonList items={photo.weakness_summary_zh} /></div>;
+}
+
+function RadarChart({ dimensions }: any) {
+  const size = 188; const center = size / 2; const radius = 58;
+  const polygonPoints = (side: 'left' | 'right') => dimensions.map((item: any, index: number) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / dimensions.length;
+    const value = Math.max(0, Math.min(100, item[side])) / 100;
+    return `${center + Math.cos(angle) * radius * value},${center + Math.sin(angle) * radius * value}`;
+  }).join(' ');
+  const gridPoints = (scale: number) => dimensions.map((_: any, index: number) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / dimensions.length;
+    return `${center + Math.cos(angle) * radius * scale},${center + Math.sin(angle) * radius * scale}`;
+  }).join(' ');
+  if (!dimensions.length) return null;
+  return <div className="radar-wrap"><svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="绝对质量雷达图">
+    {[0.33, 0.66, 1].map((scale) => <polygon key={scale} className="radar-grid" points={gridPoints(scale)} />)}
+    {dimensions.map((item: any, index: number) => {
+      const angle = -Math.PI / 2 + index * Math.PI * 2 / dimensions.length;
+      return <g key={item.key}><line className="radar-axis" x1={center} y1={center} x2={center + Math.cos(angle) * radius} y2={center + Math.sin(angle) * radius} /><text x={center + Math.cos(angle) * (radius + 28)} y={center + Math.sin(angle) * (radius + 28)} textAnchor="middle" dominantBaseline="middle">{item.label.replace('质量', '')} {item.left}→{item.right}</text></g>;
+    })}
+    <polygon className="radar-left" points={polygonPoints('left')} />
+    <polygon className="radar-right" points={polygonPoints('right')} />
+  </svg><div className="chart-legend"><span><i className="legend-left" />保留</span><span><i className="legend-right" />待删除</span></div></div>;
+}
+
+function HistogramCompare({ left, right }: any) {
+  const [channel, setChannel] = useState<'luma' | 'r' | 'g' | 'b' | 'rgb'>('luma');
+  const leftLum = brightnessHistogram(left); const rightLum = brightnessHistogram(right);
+  const leftRgb = rgbHistogram(left); const rightRgb = rgbHistogram(right);
+  if (!leftLum.length || !rightLum.length) return null;
+  const leftClip = clipText(left); const rightClip = clipText(right);
+  return <div className="histogram-card"><div className="histogram-head"><p className="eyebrow">直方图对比</p><div className="histogram-toggle">{(['luma', 'r', 'g', 'b', 'rgb'] as const).map((item) => <button key={item} className={channel === item ? 'active' : ''} onClick={() => setChannel(item)}>{item === 'luma' ? '亮度' : item.toUpperCase()}</button>)}</div></div><CombinedHistogram leftLum={leftLum} rightLum={rightLum} leftRgb={leftRgb} rightRgb={rightRgb} channel={channel} /><div className="histogram-meta"><span>保留：{leftClip || '—'}</span><span>待删除：{rightClip || '—'}</span></div><div className="histogram-axis"><span>暗部</span><span>中间调</span><span>高光</span></div></div>;
+}
+
+function CombinedHistogram({ leftLum, rightLum, leftRgb, rightRgb, channel }: any) {
+  const width = 260; const height = 92;
+  const channelSeries = channel === 'rgb'
+    ? [leftRgb?.r || [], leftRgb?.g || [], leftRgb?.b || [], rightRgb?.r || [], rightRgb?.g || [], rightRgb?.b || []]
+    : channel === 'luma'
+      ? [leftLum, rightLum]
+      : [leftRgb?.[channel] || [], rightRgb?.[channel] || []];
+  const series = channelSeries.filter((arr) => arr.length);
+  const maxValue = Math.max(...series.flat(), 0.001);
+  return <svg className="combined-histogram" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="histogram compare">
+    <line className="hist-grid" x1={width / 3} y1="0" x2={width / 3} y2={height} />
+    <line className="hist-grid" x1={width * 2 / 3} y1="0" x2={width * 2 / 3} y2={height} />
+    {channel === 'luma' ? <>
+      <path className="hist-luma-fill left" d={histogramPath(leftLum, width, height, maxValue, true)} />
+      <path className="hist-luma-fill right" d={histogramPath(rightLum, width, height, maxValue, true)} />
+      <path className="hist-luma left" d={histogramPath(leftLum, width, height, maxValue)} />
+      <path className="hist-luma right" d={histogramPath(rightLum, width, height, maxValue)} />
+    </> : channel === 'rgb' ? <>
+      {leftRgb?.r && <path className="hist-r left" d={histogramPath(leftRgb.r, width, height, maxValue)} />}
+      {leftRgb?.g && <path className="hist-g left" d={histogramPath(leftRgb.g, width, height, maxValue)} />}
+      {leftRgb?.b && <path className="hist-b left" d={histogramPath(leftRgb.b, width, height, maxValue)} />}
+      {rightRgb?.r && <path className="hist-r right" d={histogramPath(rightRgb.r, width, height, maxValue)} />}
+      {rightRgb?.g && <path className="hist-g right" d={histogramPath(rightRgb.g, width, height, maxValue)} />}
+      {rightRgb?.b && <path className="hist-b right" d={histogramPath(rightRgb.b, width, height, maxValue)} />}
+    </> : <>
+      {leftRgb?.[channel] && <path className={`hist-${channel} left`} d={histogramPath(leftRgb[channel], width, height, maxValue)} />}
+      {rightRgb?.[channel] && <path className={`hist-${channel} right`} d={histogramPath(rightRgb[channel], width, height, maxValue)} />}
+    </>}
+  </svg>;
+}
+
+function histogramPath(values: number[], width: number, height: number, maxValue: number, area = false) {
+  if (!values.length) return '';
+  const step = width / Math.max(values.length - 1, 1);
+  const points = values.map((value, index) => `${index * step},${height - Math.max(0, value) / maxValue * (height - 6) - 3}`);
+  const line = `M ${points.join(' L ')}`;
+  return area ? `${line} L ${width},${height} L 0,${height} Z` : line;
+}
+
+function CompareInspector({ state }: any) {
+  const keeper = activeKeeper(state); const challenger = activeChallenger(state); const set = activeSet(state); const meta = challengerMeta(set, challenger?.display_id);
+  const dimensions = scoreDimensions(keeper, challenger);
+  const metricRows = compareMetricRows(keeper, challenger);
+  const [expanded, setExpanded] = useState(false);
+  const shownRows = expanded ? metricRows : metricRows.slice(0, 5);
   const diff = meta?.score_delta;
-  return <div className="reason-card"><p className="eyebrow">对比参数</p><div className="compare-stats"><div><strong>保留</strong><span>{keeper?.display_id || '—'}</span><em>评分 {scoreText(keeper)}</em><em>{keeper?.preview_width}×{keeper?.preview_height}</em><em>{formatBytes(photoBytes(keeper))}</em></div><div><strong>待删除</strong><span>{challenger?.display_id || '—'}</span><em>评分 {scoreText(challenger)}</em><em>{challenger?.preview_width}×{challenger?.preview_height}</em><em>{formatBytes(photoBytes(challenger))}</em></div></div>{meta && <p className="muted">相似度 {Math.round((meta.similarity_to_primary || 0) * 100)} · 评分差 {formatDelta(diff) || '—'} · {meta.reason_zh || ''}</p>}<div className="score-diff-list"><p className="eyebrow">评分差异</p>{dimensions.slice(0, 5).map((item: any) => <div className="score-diff-row" key={item.key}><span>{item.label}</span><strong>{item.left}</strong><em className={item.diff >= 0 ? 'better' : 'worse'}>{item.diff > 0 ? '+' : ''}{item.diff}</em><strong>{item.right}</strong></div>)}</div><button className="primary wide" disabled={!challenger} onClick={replace}>替换保留</button><button className="wide" disabled={!challenger} onClick={keepBothAction}>两张都保留</button><button className="wide danger-action" disabled={!challenger} onClick={keepDelete}>保持待删除</button><p className="muted">缩放和平移会在上一张/下一张之间保持，用来连续检查细节。</p></div>;
+  return <div className="reason-card"><p className="eyebrow">对比参数</p><div className="compare-stats"><div><strong>保留</strong><span>{keeper?.display_id || '—'}</span><em>推荐分 {scoreText(keeper)}</em><em>绝对质量 {baseScoreText(keeper)}</em><em>{keeper?.preview_width}×{keeper?.preview_height}</em><em>{formatBytes(photoBytes(keeper))}</em></div><div><strong>待删除</strong><span>{challenger?.display_id || '—'}</span><em>推荐分 {scoreText(challenger)}</em><em>绝对质量 {baseScoreText(challenger)}</em><em>{challenger?.preview_width}×{challenger?.preview_height}</em><em>{formatBytes(photoBytes(challenger))}</em></div></div>{meta && <p className="muted">相似度 {Math.round((meta.similarity_to_primary || 0) * 100)} · 推荐分差 {formatDelta(diff) || '—'} · {meta.reason_zh || ''}</p>}<div className="score-diff-list"><p className="eyebrow">绝对质量维度</p><RadarChart dimensions={dimensions} /></div><div className="score-diff-list"><div className="section-head"><p className="eyebrow">关键子项</p>{metricRows.length > 5 && <button className="link-action icon-only" title={expanded ? '收起' : '展开全部'} aria-label={expanded ? '收起' : '展开全部'} onClick={() => setExpanded(!expanded)}>{expanded ? '⌃' : '⌄'}</button>}</div>{shownRows.map((item: any) => <div className="score-diff-row metric-row" key={item.key}><span><small>{item.group}</small>{item.label}</span><strong>{item.left}</strong><em className={item.diff >= 0 ? 'better' : 'worse'}>{item.diff > 0 ? '+' : ''}{item.diff}</em><strong>{item.right}</strong></div>)}</div><HistogramCompare left={keeper} right={challenger} /></div>;
 }
 
 
-function StagingScreen({ state, mutate }: any) {
+function StagingScreen({ state, mutate, returnToStart }: any) {
   const deleteCount = allDeletePhotos(state).length;
   const totalCount = allReviewPhotos(state).length;
   const plan = state.stagePlan;
@@ -431,7 +632,7 @@ function StagingScreen({ state, mutate }: any) {
   const restoreKeep = plan?.restore_keep_count ?? 0;
   const alreadyStaged = plan?.already_staged_count ?? 0;
   const alreadyKept = plan?.already_kept_count ?? 0;
-  return <main className="staging-screen"><section className="start-panel"><p className="eyebrow">全局最终确认</p><h2>最终待删除 {targetDelete} / {totalCount} 张</h2><p>这是对当前文件夹的全部 Review 结果生效，不是只处理当前 cluster。</p><p>已标记完成 {completedCount}/{state.reviewSets.length} 组；未完成也可以最终确认，但建议先逐组确认。</p><p>待删除照片会移动到 <code>.to_delete/</code>，不会永久删除。</p>{plan && <div className="stage-summary"><p><strong>最终状态</strong>：保留 {targetKeep} 张，待删除 {targetDelete} 张</p><p><strong>本次变更</strong>：移入 .to_delete {moveToDelete} 张，恢复保留 {restoreKeep} 张</p><p><strong>无需移动</strong>：已在 .to_delete {alreadyStaged} 张，已在原位 {alreadyKept} 张</p><p>保留空间：{formatBytes(plan.keep_source_bytes)} / {formatBytes(plan.all_source_bytes)}，释放 {formatBytes(plan.source_bytes)}</p><p>Sidecar 本次移动：{plan.sidecar_count} 个；问题：{plan.issues?.length || 0}</p></div>}{result && <div className="stage-summary"><p>批次： <code>{result.operation_batch_id}</code></p><p>实际文件操作： {result.moved_count}，失败： {result.failed_count}</p></div>}<div className="stage-actions"><button onClick={() => mutate((draft: any) => { draft.screen = 'review'; })}>返回 Review</button><button onClick={async () => { const nextPlan = await repository.dryRunStage(state.folder); mutate((draft: any) => { draft.stagePlan = nextPlan; draft.stageResult = null; }); }}>重新计算</button><button className="primary" disabled={!plan} onClick={async () => { const nextResult = await repository.executeStage(state.folder, plan.plan_id); mutate((draft: any) => { draft.stageResult = nextResult; }); }}>应用本次变更</button>{result?.operation_batch_id && <button onClick={async () => { const undo = await repository.undoStage(state.folder, result.operation_batch_id); mutate((draft: any) => { draft.stageResult = { ...undo, moved_count: undo.restored_count }; }); }}>撤销</button>}</div></section></main>;
+  return <main className="staging-screen"><section className="start-panel"><p className="eyebrow">全局最终确认</p><h2>最终待删除 {targetDelete} / {totalCount} 张</h2><p>这是对当前文件夹的全部 Review 结果生效，不是只处理当前 cluster。</p><p>已标记完成 {completedCount}/{state.reviewSets.length} 组；未完成也可以最终确认，但建议先逐组确认。</p><p>待删除照片会移动到 <code>.to_delete/</code>，不会永久删除。</p>{plan && <div className="stage-summary"><p><strong>最终状态</strong>：保留 {targetKeep} 张，待删除 {targetDelete} 张</p><p><strong>本次变更</strong>：移入 .to_delete {moveToDelete} 张，恢复保留 {restoreKeep} 张</p><p><strong>无需移动</strong>：已在 .to_delete {alreadyStaged} 张，已在原位 {alreadyKept} 张</p><p>保留空间：{formatBytes(plan.keep_source_bytes)} / {formatBytes(plan.all_source_bytes)}，释放 {formatBytes(plan.source_bytes)}</p><p>Sidecar 本次移动：{plan.sidecar_count} 个；问题：{plan.issues?.length || 0}</p></div>}{result && <div className="stage-summary"><p>批次： <code>{result.operation_batch_id}</code></p><p>实际文件操作： {result.moved_count}，失败： {result.failed_count}</p></div>}<div className="stage-actions"><button onClick={() => mutate((draft: any) => { draft.screen = 'review'; })}>返回 Review</button><button onClick={returnToStart}>切换项目</button><button onClick={async () => { const nextPlan = await repository.dryRunStage(state.folder); mutate((draft: any) => { draft.stagePlan = nextPlan; draft.stageResult = null; }); }}>重新计算</button><button className="primary" disabled={!plan} onClick={async () => { const nextResult = await repository.executeStage(state.folder, plan.plan_id); mutate((draft: any) => { draft.stageResult = nextResult; }); }}>应用本次变更</button>{result?.operation_batch_id && <button onClick={async () => { const undo = await repository.undoStage(state.folder, result.operation_batch_id); mutate((draft: any) => { draft.stageResult = { ...undo, moved_count: undo.restored_count }; }); }}>撤销</button>}</div></section></main>;
 }
 
 function Image({ state, photo, kind = 'thumb', className = '' }: any) {

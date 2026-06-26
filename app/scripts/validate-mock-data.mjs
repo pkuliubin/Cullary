@@ -49,6 +49,9 @@ for (const set of mockReviewSets) {
     assert(fs.existsSync(path.join(mockFolder, photo.thumb_path)), `${photo.display_id}: thumb file missing`);
     assert(fs.existsSync(path.join(mockFolder, photo.preview_path)), `${photo.display_id}: preview file missing`);
     assert(fs.existsSync(photo.source_path), `${photo.display_id}: source file missing ${photo.source_path}`);
+    const raw = photo.compare_metrics?.raw || {};
+    assert(Array.isArray(raw.brightness_histogram) && raw.brightness_histogram.length === 64, `${photo.display_id}: brightness_histogram must have 64 bins`);
+    assert(raw.rgb_histogram && ['r', 'g', 'b'].every((key) => Array.isArray(raw.rgb_histogram[key]) && raw.rgb_histogram[key].length === 64), `${photo.display_id}: rgb_histogram must have 64 bins per channel`);
   }
 }
 

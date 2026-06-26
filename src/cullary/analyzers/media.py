@@ -6,8 +6,8 @@ from typing import Any
 from cullary.utils import run_cmd, write_json
 
 
-def exiftool_json(path: Path, grouped: bool = False) -> dict[str, Any]:
-    args = ["exiftool", "-json", "-n"]
+def exiftool_json(path: Path, grouped: bool = False, exiftool_path: str | None = None) -> dict[str, Any]:
+    args = [exiftool_path or "exiftool", "-json", "-n"]
     if grouped:
         args.extend(["-G1", "-a", "-s"])
     args.append(str(path))
@@ -28,16 +28,16 @@ def is_jpeg(path: Path) -> bool:
         return False
 
 
-def extract_with_exiftool_binary(source: Path, tag: str, dest: Path) -> bool:
-    proc = run_cmd(["exiftool", "-b", f"-{tag}", str(source)], stdout_path=dest, timeout=180)
+def extract_with_exiftool_binary(source: Path, tag: str, dest: Path, exiftool_path: str | None = None) -> bool:
+    proc = run_cmd([exiftool_path or "exiftool", "-b", f"-{tag}", str(source)], stdout_path=dest, timeout=180)
     if proc.returncode == 0 and dest.exists() and dest.stat().st_size > 0 and is_jpeg(dest):
         return True
     dest.unlink(missing_ok=True)
     return False
 
 
-def extract_3fr_ifd0_preview(source: Path, dest: Path) -> tuple[bool, dict[str, Any]]:
-    grouped = exiftool_json(source, grouped=True)
+def extract_3fr_ifd0_preview(source: Path, dest: Path, exiftool_path: str | None = None) -> tuple[bool, dict[str, Any]]:
+    grouped = exiftool_json(source, grouped=True, exiftool_path=exiftool_path)
     offset = grouped.get("IFD0:StripOffsets")
     count = grouped.get("IFD0:StripByteCounts")
     info = {"ifd0_strip_offset": offset, "ifd0_strip_byte_count": count, "ifd0_compression": grouped.get("IFD0:Compression")}
@@ -80,8 +80,8 @@ def resize_jpeg_in_place(path: Path, long_edge: int) -> None:
     make_resized_jpeg(path, path, long_edge)
 
 
-def extract_metadata(source: Path, raw_output_path: Path) -> dict[str, Any]:
-    metadata = exiftool_json(source)
+def extract_metadata(source: Path, raw_output_path: Path, exiftool_path: str | None = None) -> dict[str, Any]:
+    metadata = exiftool_json(source, exiftool_path=exiftool_path)
     useful = {
         "file_name": metadata.get("FileName"),
         "file_type": metadata.get("FileType"),
@@ -103,7 +103,7 @@ def extract_metadata(source: Path, raw_output_path: Path) -> dict[str, Any]:
     return {"useful": useful, "raw_path": None}
 
 
-def extract_preview(source: Path, dest: Path, long_edge: int, sips_path: str | None) -> tuple[dict[str, Any] | None, str | None]:
+def extract_preview(source: Path, dest: Path, long_edge: int, sips_path: str | None, exiftool_path: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
     attempts: list[dict[str, Any]] = []
     dest.parent.mkdir(parents=True, exist_ok=True)
     suffix = source.suffix.lower()
@@ -113,7 +113,7 @@ def extract_preview(source: Path, dest: Path, long_edge: int, sips_path: str | N
         return {"preview_path": None, "preview_width": width, "preview_height": height, "preview_method": "source_jpeg_resize"}, None
 
     for tag in ("PreviewImage", "JpgFromRaw", "ThumbnailImage"):
-        ok = extract_with_exiftool_binary(source, tag, dest)
+        ok = extract_with_exiftool_binary(source, tag, dest, exiftool_path)
         attempts.append({"method": f"exiftool:{tag}", "success": ok})
         if ok:
             resize_jpeg_in_place(dest, long_edge)
@@ -121,7 +121,7 @@ def extract_preview(source: Path, dest: Path, long_edge: int, sips_path: str | N
             return {"preview_path": None, "preview_width": width, "preview_height": height, "preview_method": f"exiftool:{tag}", "preview_attempts": attempts}, None
 
     if suffix == ".3fr":
-        ok, info = extract_3fr_ifd0_preview(source, dest)
+        ok, info = extract_3fr_ifd0_preview(source, dest, exiftool_path)
         attempts.append({"method": "3fr_ifd0_byte_slice", "success": ok, "info": info})
         if ok:
             resize_jpeg_in_place(dest, long_edge)
