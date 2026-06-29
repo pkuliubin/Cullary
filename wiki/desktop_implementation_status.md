@@ -2,7 +2,7 @@
 
 This document records the current Tauri/Rust/Frontend implementation state.
 
-Last verified: 2026-06-25.
+Last verified: 2026-06-29. Full release runtime verification passed with `npm run runtime:verify:release`.
 
 Packaging plan: [Desktop Packaging Plan](desktop_packaging_plan.md).
 
@@ -74,6 +74,10 @@ Frontend prototype:
 - Completed review sets are persisted in `review_progress.json`.
 - Compare decisions append preference events for future user-preference learning.
 - Tauri asset protocol is used for cached thumbnails/previews; base64 data URL loading is fallback only.
+- Runtime diagnostics command reports resolved config, paths, and tool versions.
+- Start screen exposes runtime diagnostics for internal testers.
+- Release summary JSON is generated for internal packages.
+- Internal tester guide documents install, Gatekeeper workaround, and issue-report checklist.
 
 ## Validation
 
@@ -109,6 +113,23 @@ Current result:
 ```text
 Finished dev profile
 Built application at: src-tauri/target/debug/cullary-desktop
+```
+
+Runtime packaging smoke:
+
+```bash
+npm run runtime:verify
+npm run runtime:verify:release
+```
+
+Current result:
+
+```text
+Runtime app bundle builds.
+Existing-artifact smoke passes.
+4-photo full-pipeline bundled smoke passes.
+Internal release DMG generation passes.
+DMG mount smoke passes.
 ```
 
 ## Notes

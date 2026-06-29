@@ -119,20 +119,91 @@ pub struct UndoResult {
 }
 
 #[tauri::command]
-pub fn start_pipeline(folder: String, app: AppHandle, registry: State<'_, TaskRegistry>) -> Result<Value, String> {
+pub fn get_runtime_diagnostics(app: AppHandle) -> Result<Value, String> {
+    let runtime = load_runtime_config(&app)?;
+    let python = resolve_runtime_path(&app, &runtime, &runtime.python_binary)?;
+    let pythonpath = resolve_runtime_path(&app, &runtime, &runtime.pythonpath)?;
+    let working_dir = match runtime.working_dir.as_deref() {
+        Some(path) => resolve_runtime_path(&app, &runtime, path)?,
+        None => runtime
+            .base_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(".")),
+    };
+    let config_path = match runtime.config_path.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let model_dir = match runtime.model_dir.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let exiftool_binary = match runtime.exiftool_binary.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let runtime_cache = runtime_cache_dir(&app)?;
+
+    let python_version = command_version(&python, &["-V"], None);
+    let exiftool_version = exiftool_binary
+        .as_ref()
+        .map(|path| command_version(path, &["-ver"], None));
+
+    Ok(json!({
+        "schema_version": "1.0",
+        "runtime_config": {
+            "source_path": runtime.source_path.as_ref().map(path_to_string),
+            "base_dir": runtime.base_dir.as_ref().map(path_to_string),
+            "pipeline_mode": runtime.pipeline_mode,
+            "module": runtime.module,
+        },
+        "paths": {
+            "python_binary": path_status(&python),
+            "pythonpath": path_status(&pythonpath),
+            "working_dir": path_status(&working_dir),
+            "config_path": config_path.as_ref().map(path_status),
+            "model_dir": model_dir.as_ref().map(path_status),
+            "exiftool_binary": exiftool_binary.as_ref().map(path_status),
+            "runtime_cache_dir": path_status(&runtime_cache),
+        },
+        "versions": {
+            "python": python_version,
+            "exiftool": exiftool_version,
+        },
+        "env_preview": {
+            "PYTHONPATH": path_to_string(&pythonpath),
+            "CULLARY_MODEL_DIR": model_dir.as_ref().map(path_to_string),
+            "CULLARY_EXIFTOOL": exiftool_binary.as_ref().map(path_to_string),
+            "TRANSFORMERS_OFFLINE": "1",
+        }
+    }))
+}
+
+#[tauri::command]
+pub fn start_pipeline(
+    folder: String,
+    app: AppHandle,
+    registry: State<'_, TaskRegistry>,
+) -> Result<Value, String> {
     let folder_path = require_dir(&folder)?;
     let runtime = load_runtime_config(&app)?;
     let task_id = new_id("task");
 
     if runtime.pipeline_mode != "python_module" {
-        return Err(format!("unsupported pipeline_mode: {}", runtime.pipeline_mode));
+        return Err(format!(
+            "unsupported pipeline_mode: {}",
+            runtime.pipeline_mode
+        ));
     }
 
     let python = resolve_runtime_path(&app, &runtime, &runtime.python_binary)?;
     let pythonpath = resolve_runtime_path(&app, &runtime, &runtime.pythonpath)?;
     let working_dir = match runtime.working_dir.as_deref() {
         Some(path) => resolve_runtime_path(&app, &runtime, path)?,
-        None => runtime.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
+        None => runtime
+            .base_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(".")),
     };
     let config_path = match runtime.config_path.as_deref() {
         Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
@@ -153,21 +224,41 @@ pub fn start_pipeline(folder: String, app: AppHandle, registry: State<'_, TaskRe
         .current_dir(&working_dir)
         .env("PYTHONPATH", pythonpath.to_string_lossy().to_string())
         .env("PATH", gui_safe_path())
-        .env("MPLCONFIGDIR", runtime_cache_dir.join("matplotlib").to_string_lossy().to_string())
-        .env("XDG_CACHE_HOME", runtime_cache_dir.join("xdg").to_string_lossy().to_string())
-        .env("HF_HOME", runtime_cache_dir.join("huggingface").to_string_lossy().to_string())
+        .env(
+            "MPLCONFIGDIR",
+            runtime_cache_dir
+                .join("matplotlib")
+                .to_string_lossy()
+                .to_string(),
+        )
+        .env(
+            "XDG_CACHE_HOME",
+            runtime_cache_dir.join("xdg").to_string_lossy().to_string(),
+        )
+        .env(
+            "HF_HOME",
+            runtime_cache_dir
+                .join("huggingface")
+                .to_string_lossy()
+                .to_string(),
+        )
         .env("TRANSFORMERS_OFFLINE", "1")
         .arg("-m")
         .arg(&runtime.module)
         .arg(folder_path.to_string_lossy().to_string());
     if let Some(config_path) = config_path {
-        command.arg("--config").arg(config_path.to_string_lossy().to_string());
+        command
+            .arg("--config")
+            .arg(config_path.to_string_lossy().to_string());
     }
     if let Some(model_dir) = model_dir {
         command.env("CULLARY_MODEL_DIR", model_dir.to_string_lossy().to_string());
     }
     if let Some(exiftool_binary) = exiftool_binary {
-        command.env("CULLARY_EXIFTOOL", exiftool_binary.to_string_lossy().to_string());
+        command.env(
+            "CULLARY_EXIFTOOL",
+            exiftool_binary.to_string_lossy().to_string(),
+        );
     }
     let mut child = command
         .arg("--progress")
@@ -216,7 +307,11 @@ pub fn start_pipeline(folder: String, app: AppHandle, registry: State<'_, TaskRe
 }
 
 #[tauri::command]
-pub fn cancel_pipeline(task_id: String, app: AppHandle, registry: State<'_, TaskRegistry>) -> Result<(), String> {
+pub fn cancel_pipeline(
+    task_id: String,
+    app: AppHandle,
+    registry: State<'_, TaskRegistry>,
+) -> Result<(), String> {
     let mut children = registry
         .children
         .lock()
@@ -243,14 +338,20 @@ fn watch_pipeline_exit(
             let mut child = match child.lock() {
                 Ok(child) => child,
                 Err(_) => {
-                    let _ = app.emit("pipeline-failed", json!({ "taskId": task_id, "message": "pipeline child lock poisoned" }));
+                    let _ = app.emit(
+                        "pipeline-failed",
+                        json!({ "taskId": task_id, "message": "pipeline child lock poisoned" }),
+                    );
                     return;
                 }
             };
             match child.try_wait() {
                 Ok(status) => status,
                 Err(err) => {
-                    let removed = children.lock().ok().and_then(|mut map| map.remove(&task_id));
+                    let removed = children
+                        .lock()
+                        .ok()
+                        .and_then(|mut map| map.remove(&task_id));
                     if removed.is_some() {
                         let _ = app.emit("pipeline-failed", json!({ "taskId": task_id, "message": format!("failed to wait for pipeline: {err}") }));
                     }
@@ -260,18 +361,27 @@ fn watch_pipeline_exit(
         };
 
         if let Some(status) = status {
-            let removed = children.lock().ok().and_then(|mut map| map.remove(&task_id));
+            let removed = children
+                .lock()
+                .ok()
+                .and_then(|mut map| map.remove(&task_id));
             if removed.is_none() {
                 return;
             }
             if status.success() {
-                let _ = app.emit("pipeline-completed", json!({ "taskId": task_id, "exitCode": status.code() }));
+                let _ = app.emit(
+                    "pipeline-completed",
+                    json!({ "taskId": task_id, "exitCode": status.code() }),
+                );
             } else {
-                let _ = app.emit("pipeline-failed", json!({
-                    "taskId": task_id,
-                    "exitCode": status.code(),
-                    "message": "pipeline exited with a non-zero status"
-                }));
+                let _ = app.emit(
+                    "pipeline-failed",
+                    json!({
+                        "taskId": task_id,
+                        "exitCode": status.code(),
+                        "message": "pipeline exited with a non-zero status"
+                    }),
+                );
             }
             return;
         }
@@ -305,8 +415,15 @@ pub fn read_image_data_url(folder: String, artifact_path: String) -> Result<Stri
         eprintln!("[Cullary image] missing file: {}", path.display());
         return Err(format!("image file does not exist: {}", path.display()));
     }
-    let bytes = fs::read(&path).map_err(|err| format!("failed to read image {}: {err}", path.display()))?;
-    let mime = match path.extension().and_then(|ext| ext.to_str()).unwrap_or_default().to_ascii_lowercase().as_str() {
+    let bytes =
+        fs::read(&path).map_err(|err| format!("failed to read image {}: {err}", path.display()))?;
+    let mime = match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",
@@ -353,15 +470,24 @@ pub fn load_review_progress(folder: String) -> Result<Value, String> {
 pub fn save_review_progress(folder: String, mut progress: Value) -> Result<(), String> {
     ensure_progress_defaults(&mut progress);
     if let Some(obj) = progress.as_object_mut() {
-        obj.insert("updated_at".into(), Value::Number((now_millis() as u64).into()));
+        obj.insert(
+            "updated_at".into(),
+            Value::Number((now_millis() as u64).into()),
+        );
     }
-    write_json_file(&cullary_dir(&folder)?.join("review_progress.json"), &progress)
+    write_json_file(
+        &cullary_dir(&folder)?.join("review_progress.json"),
+        &progress,
+    )
 }
 
 #[tauri::command]
 pub fn append_preference_event(folder: String, mut event: Value) -> Result<(), String> {
     ensure_event_defaults(&mut event, "compare_decision");
-    append_jsonl(&cullary_dir(&folder)?.join("preference_events.jsonl"), &event)
+    append_jsonl(
+        &cullary_dir(&folder)?.join("preference_events.jsonl"),
+        &event,
+    )
 }
 
 #[tauri::command]
@@ -384,7 +510,11 @@ pub fn dry_run_stage(folder: String) -> Result<StagePlan, String> {
 
     for (display_id, source) in &photo_sources {
         if source.is_empty() {
-            issues.push(StageIssue { display_id: Some(display_id.clone()), issue: "missing_source_path".into(), path: None });
+            issues.push(StageIssue {
+                display_id: Some(display_id.clone()),
+                issue: "missing_source_path".into(),
+                path: None,
+            });
             continue;
         }
         let source_path = PathBuf::from(source);
@@ -423,7 +553,11 @@ pub fn dry_run_stage(folder: String) -> Result<StagePlan, String> {
         target_delete_count += 1;
         if !source_path.exists() {
             if !staged_path.exists() {
-                issues.push(StageIssue { display_id: Some(display_id.clone()), issue: "source_missing".into(), path: Some(source.clone()) });
+                issues.push(StageIssue {
+                    display_id: Some(display_id.clone()),
+                    issue: "source_missing".into(),
+                    path: Some(source.clone()),
+                });
             } else {
                 already_staged_count += 1;
             }
@@ -449,9 +583,17 @@ pub fn dry_run_stage(folder: String) -> Result<StagePlan, String> {
         }
     }
 
-    let source_bytes = intended_source_bytes(&root, &destination_root, &photo_sources, |display_id| !keep_ids.contains(display_id));
-    let sidecar_bytes = operations.iter().filter(|op| op.kind == "sidecar").map(|op| op.bytes).sum();
-    let all_source_bytes = intended_source_bytes(&root, &destination_root, &photo_sources, |_| true);
+    let source_bytes =
+        intended_source_bytes(&root, &destination_root, &photo_sources, |display_id| {
+            !keep_ids.contains(display_id)
+        });
+    let sidecar_bytes = operations
+        .iter()
+        .filter(|op| op.kind == "sidecar")
+        .map(|op| op.bytes)
+        .sum();
+    let all_source_bytes =
+        intended_source_bytes(&root, &destination_root, &photo_sources, |_| true);
     let keep_source_bytes = all_source_bytes - source_bytes;
     let plan = StagePlan {
         schema_version: "1.0".into(),
@@ -474,7 +616,10 @@ pub fn dry_run_stage(folder: String) -> Result<StagePlan, String> {
         operations,
         issues,
     };
-    write_json_file(&stage_plan_path(&cullary, &plan.plan_id), &serde_json::to_value(&plan).unwrap())?;
+    write_json_file(
+        &stage_plan_path(&cullary, &plan.plan_id),
+        &serde_json::to_value(&plan).unwrap(),
+    )?;
     Ok(plan)
 }
 
@@ -493,16 +638,25 @@ pub fn execute_stage(folder: String, plan_id: String) -> Result<StageResult, Str
         let source = PathBuf::from(&op.source);
         let destination = PathBuf::from(&op.destination);
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|err| format!("failed to create destination dir: {err}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("failed to create destination dir: {err}"))?;
         }
         if destination.exists() {
-            failures.push(StageIssue { display_id: Some(op.display_id.clone()), issue: "destination_exists".into(), path: Some(op.destination.clone()) });
+            failures.push(StageIssue {
+                display_id: Some(op.display_id.clone()),
+                issue: "destination_exists".into(),
+                path: Some(op.destination.clone()),
+            });
             continue;
         }
         match fs::rename(&source, &destination) {
             Ok(_) => {
                 moved_count += 1;
-                let operation = if op.kind.starts_with("restore_") { "restore_from_delete_staging" } else { "move_to_delete_staging" };
+                let operation = if op.kind.starts_with("restore_") {
+                    "restore_from_delete_staging"
+                } else {
+                    "move_to_delete_staging"
+                };
                 let log = json!({
                     "schema_version": "1.0",
                     "operation_batch_id": batch_id,
@@ -517,7 +671,11 @@ pub fn execute_stage(folder: String, plan_id: String) -> Result<StageResult, Str
                 });
                 append_jsonl(&cullary.join("file_operations.jsonl"), &log)?;
             }
-            Err(err) => failures.push(StageIssue { display_id: Some(op.display_id.clone()), issue: format!("move_failed: {err}"), path: Some(op.source.clone()) }),
+            Err(err) => failures.push(StageIssue {
+                display_id: Some(op.display_id.clone()),
+                issue: format!("move_failed: {err}"),
+                path: Some(op.source.clone()),
+            }),
         }
     }
 
@@ -544,17 +702,31 @@ pub fn undo_stage(folder: String, operation_batch_id: String) -> Result<UndoResu
         if entry.get("status").and_then(Value::as_str) != Some("success") {
             continue;
         }
-        let source = entry.get("source").and_then(Value::as_str).unwrap_or_default();
-        let destination = entry.get("destination").and_then(Value::as_str).unwrap_or_default();
-        let display_id = entry.get("display_id").and_then(Value::as_str).map(str::to_string);
+        let source = entry
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let destination = entry
+            .get("destination")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let display_id = entry
+            .get("display_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let from = PathBuf::from(destination);
         let to = PathBuf::from(source);
         if let Some(parent) = to.parent() {
-            fs::create_dir_all(parent).map_err(|err| format!("failed to create restore dir: {err}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("failed to create restore dir: {err}"))?;
         }
         match fs::rename(&from, &to) {
             Ok(_) => restored_count += 1,
-            Err(err) => failures.push(StageIssue { display_id, issue: format!("restore_failed: {err}"), path: Some(destination.to_string()) }),
+            Err(err) => failures.push(StageIssue {
+                display_id,
+                issue: format!("restore_failed: {err}"),
+                path: Some(destination.to_string()),
+            }),
         }
     }
 
@@ -573,7 +745,10 @@ fn allow_review_asset_scope(folder: &str, app: &AppHandle) -> Result<(), String>
     app.asset_protocol_scope()
         .allow_directory(&cullary, true)
         .map_err(|err| format!("failed to allow asset scope {}: {err}", cullary.display()))?;
-    eprintln!("[Cullary image] asset scope allowed dir={}", cullary.display());
+    eprintln!(
+        "[Cullary image] asset scope allowed dir={}",
+        cullary.display()
+    );
     Ok(())
 }
 
@@ -594,7 +769,41 @@ fn require_dir(folder: &str) -> Result<PathBuf, String> {
     if !path.is_dir() {
         return Err(format!("folder is not a directory: {folder}"));
     }
-    path.canonicalize().map_err(|err| format!("failed to resolve folder: {err}"))
+    path.canonicalize()
+        .map_err(|err| format!("failed to resolve folder: {err}"))
+}
+
+fn path_to_string(path: &PathBuf) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn path_status(path: &PathBuf) -> Value {
+    json!({
+        "path": path_to_string(path),
+        "exists": path.exists(),
+        "is_file": path.is_file(),
+        "is_dir": path.is_dir(),
+    })
+}
+
+fn command_version(binary: &PathBuf, args: &[&str], cwd: Option<&PathBuf>) -> Value {
+    if !binary.is_file() {
+        return json!({"ok": false, "error": "binary does not exist"});
+    }
+    let mut command = Command::new(binary);
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    match command.output() {
+        Ok(output) => json!({
+            "ok": output.status.success(),
+            "exit_code": output.status.code(),
+            "stdout": String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            "stderr": String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }),
+        Err(err) => json!({"ok": false, "error": err.to_string()}),
+    }
 }
 
 fn gui_safe_path() -> String {
@@ -636,11 +845,19 @@ fn default_pipeline_module() -> String {
 
 fn load_runtime_config(app: &AppHandle) -> Result<RuntimeConfig, String> {
     let config_path = runtime_config_path(app)?;
-    let mut config: RuntimeConfig = serde_json::from_str(
-        &fs::read_to_string(&config_path)
-            .map_err(|err| format!("failed to read runtime config {}: {err}", config_path.display()))?,
-    )
-    .map_err(|err| format!("failed to parse runtime config {}: {err}", config_path.display()))?;
+    let mut config: RuntimeConfig =
+        serde_json::from_str(&fs::read_to_string(&config_path).map_err(|err| {
+            format!(
+                "failed to read runtime config {}: {err}",
+                config_path.display()
+            )
+        })?)
+        .map_err(|err| {
+            format!(
+                "failed to parse runtime config {}: {err}",
+                config_path.display()
+            )
+        })?;
     config.source_path = Some(config_path.clone());
     config.base_dir = config_path.parent().map(Path::to_path_buf);
     Ok(config)
@@ -652,7 +869,10 @@ fn runtime_config_path(app: &AppHandle) -> Result<PathBuf, String> {
         if path.is_file() {
             return Ok(path);
         }
-        return Err(format!("CULLARY_RUNTIME_CONFIG does not point to a file: {}", path.display()));
+        return Err(format!(
+            "CULLARY_RUNTIME_CONFIG does not point to a file: {}",
+            path.display()
+        ));
     }
     if let Some(path) = user_runtime_config_path() {
         if path.is_file() {
@@ -706,10 +926,19 @@ fn write_dev_runtime_config(root: &Path, path: &Path) -> Result<(), String> {
         "exiftool_binary": exiftool,
     });
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("failed to create runtime config dir {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create runtime config dir {}: {err}",
+                parent.display()
+            )
+        })?;
     }
-    fs::write(path, serde_json::to_string_pretty(&config).unwrap() + "\n")
-        .map_err(|err| format!("failed to write dev runtime config {}: {err}", path.display()))
+    fs::write(path, serde_json::to_string_pretty(&config).unwrap() + "\n").map_err(|err| {
+        format!(
+            "failed to write dev runtime config {}: {err}",
+            path.display()
+        )
+    })
 }
 
 fn find_on_path(name: &str) -> Option<String> {
@@ -722,19 +951,32 @@ fn find_on_path(name: &str) -> Option<String> {
     None
 }
 
-fn resolve_runtime_path(app: &AppHandle, config: &RuntimeConfig, raw: &str) -> Result<PathBuf, String> {
+fn resolve_runtime_path(
+    app: &AppHandle,
+    config: &RuntimeConfig,
+    raw: &str,
+) -> Result<PathBuf, String> {
     let expanded = PathBuf::from(raw).expand_home();
     if expanded.is_absolute() {
         return Ok(expanded);
     }
     if let Some(rest) = raw.strip_prefix("resources/") {
-        let resource_dir = app.path().resource_dir().map_err(|err| format!("failed to resolve app resource dir: {err}"))?;
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|err| format!("failed to resolve app resource dir: {err}"))?;
         return Ok(resource_dir.join(rest));
     }
     if raw == "resources" {
-        return app.path().resource_dir().map_err(|err| format!("failed to resolve app resource dir: {err}"));
+        return app
+            .path()
+            .resource_dir()
+            .map_err(|err| format!("failed to resolve app resource dir: {err}"));
     }
-    let base = config.base_dir.clone().unwrap_or_else(|| PathBuf::from("."));
+    let base = config
+        .base_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."));
     Ok(base.join(expanded))
 }
 
@@ -745,7 +987,12 @@ fn runtime_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
             .map(|home| PathBuf::from(home).join("Library/Caches/Cullary"))
             .ok_or_else(|| "failed to resolve runtime cache dir".to_string())?,
     };
-    fs::create_dir_all(&base).map_err(|err| format!("failed to create runtime cache dir {}: {err}", base.display()))?;
+    fs::create_dir_all(&base).map_err(|err| {
+        format!(
+            "failed to create runtime cache dir {}: {err}",
+            base.display()
+        )
+    })?;
     Ok(base)
 }
 
@@ -781,7 +1028,10 @@ fn resolve_artifact_path(root: &Path, artifact_path: &str) -> Result<PathBuf, St
         .canonicalize()
         .map_err(|err| format!("failed to resolve artifact path {}: {err}", path.display()))?;
     if !canonical.starts_with(root) {
-        return Err(format!("artifact path is outside selected folder: {}", canonical.display()));
+        return Err(format!(
+            "artifact path is outside selected folder: {}",
+            canonical.display()
+        ));
     }
     Ok(canonical)
 }
@@ -795,44 +1045,61 @@ fn cullary_dir_from_root(root: &Path) -> PathBuf {
 }
 
 fn read_json_file(path: &Path) -> Result<Value, String> {
-    let raw = fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&raw).map_err(|err| format!("invalid json {}: {err}", path.display()))
 }
 
 fn write_json_file(path: &Path, value: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
     }
-    fs::write(path, serde_json::to_vec_pretty(value).unwrap()).map_err(|err| format!("failed to write {}: {err}", path.display()))
+    fs::write(path, serde_json::to_vec_pretty(value).unwrap())
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
 fn read_jsonl_file(path: &Path) -> Result<Vec<Value>, String> {
-    let raw = fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     let mut values = Vec::new();
     for (index, line) in raw.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        values.push(serde_json::from_str(line).map_err(|err| format!("invalid jsonl {}:{}: {err}", path.display(), index + 1))?);
+        values.push(
+            serde_json::from_str(line)
+                .map_err(|err| format!("invalid jsonl {}:{}: {err}", path.display(), index + 1))?,
+        );
     }
     Ok(values)
 }
 
 fn append_jsonl(path: &Path, value: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
     }
-    let mut file = OpenOptions::new().create(true).append(true).open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
-    writeln!(file, "{}", serde_json::to_string(value).unwrap()).map_err(|err| format!("failed to append {}: {err}", path.display()))
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    writeln!(file, "{}", serde_json::to_string(value).unwrap())
+        .map_err(|err| format!("failed to append {}: {err}", path.display()))
 }
 
 fn ensure_event_defaults(value: &mut Value, default_type: &str) {
     if let Some(obj) = value.as_object_mut() {
-        obj.entry("schema_version").or_insert_with(|| Value::String("1.0".into()));
-        obj.entry("event_id").or_insert_with(|| Value::String(new_id("event")));
-        obj.entry("event_type").or_insert_with(|| Value::String(default_type.into()));
-        obj.entry("created_at").or_insert_with(|| Value::Number((now_millis() as u64).into()));
+        obj.entry("schema_version")
+            .or_insert_with(|| Value::String("1.0".into()));
+        obj.entry("event_id")
+            .or_insert_with(|| Value::String(new_id("event")));
+        obj.entry("event_type")
+            .or_insert_with(|| Value::String(default_type.into()));
+        obj.entry("created_at")
+            .or_insert_with(|| Value::Number((now_millis() as u64).into()));
     }
 }
 
@@ -849,8 +1116,10 @@ fn ensure_progress_defaults(value: &mut Value) {
         return;
     }
     if let Some(obj) = value.as_object_mut() {
-        obj.entry("schema_version").or_insert_with(|| Value::String("1.0".into()));
-        obj.entry("completed_review_set_ids").or_insert_with(|| Value::Array(Vec::new()));
+        obj.entry("schema_version")
+            .or_insert_with(|| Value::String("1.0".into()));
+        obj.entry("completed_review_set_ids")
+            .or_insert_with(|| Value::Array(Vec::new()));
     }
 }
 
@@ -862,7 +1131,10 @@ fn stage_plan_path(cullary: &Path, plan_id: &str) -> PathBuf {
     }
 }
 
-fn latest_keep_decisions(decisions: &[Value], review_sets: &[Value]) -> std::collections::HashSet<String> {
+fn latest_keep_decisions(
+    decisions: &[Value],
+    review_sets: &[Value],
+) -> std::collections::HashSet<String> {
     let mut states: HashMap<String, String> = HashMap::new();
     for set in review_sets {
         if let Some(primary) = set.get("primary_keeper_id").and_then(Value::as_str) {
@@ -875,33 +1147,46 @@ fn latest_keep_decisions(decisions: &[Value], review_sets: &[Value]) -> std::col
         }
         if let Some(photos) = set.get("photos").and_then(Value::as_array) {
             for photo in photos {
-                let Some(display_id) = photo.get("display_id").and_then(Value::as_str) else { continue; };
-                if photo.get("ui_initial_state").and_then(Value::as_str) == Some("recommended_keep") {
+                let Some(display_id) = photo.get("display_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                if photo.get("ui_initial_state").and_then(Value::as_str) == Some("recommended_keep")
+                {
                     states.insert(display_id.to_string(), "user_keep".to_string());
                 }
             }
         }
     }
     for decision in decisions {
-        let Some(display_id) = decision.get("display_id").and_then(Value::as_str) else { continue; };
-        let Some(user_state) = decision.get("user_state").and_then(Value::as_str) else { continue; };
+        let Some(display_id) = decision.get("display_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(user_state) = decision.get("user_state").and_then(Value::as_str) else {
+            continue;
+        };
         states.insert(display_id.to_string(), user_state.to_string());
     }
-    states.into_iter().filter_map(|(display_id, state)| (state == "user_keep").then_some(display_id)).collect()
+    states
+        .into_iter()
+        .filter_map(|(display_id, state)| (state == "user_keep").then_some(display_id))
+        .collect()
 }
-
 
 fn enrich_source_sizes(review_sets: &mut [Value], root: &Path) {
     let destination_root = root.join(".to_delete");
     for set in review_sets {
-        let Some(photos) = set.get_mut("photos").and_then(Value::as_array_mut) else { continue; };
+        let Some(photos) = set.get_mut("photos").and_then(Value::as_array_mut) else {
+            continue;
+        };
         for photo in photos {
             let source = photo
                 .get("source_path")
                 .and_then(Value::as_str)
                 .or_else(|| photo.pointer("/source/path").and_then(Value::as_str))
                 .map(str::to_string);
-            let Some(source) = source else { continue; };
+            let Some(source) = source else {
+                continue;
+            };
             let source_path = PathBuf::from(source);
             let staged_path = destination_for(root, &destination_root, &source_path);
             let bytes = file_size(&source_path).max(file_size(&staged_path));
@@ -915,9 +1200,13 @@ fn enrich_source_sizes(review_sets: &mut [Value], root: &Path) {
 fn collect_photo_sources(review_sets: &[Value]) -> HashMap<String, String> {
     let mut sources = HashMap::new();
     for set in review_sets {
-        let Some(photos) = set.get("photos").and_then(Value::as_array) else { continue; };
+        let Some(photos) = set.get("photos").and_then(Value::as_array) else {
+            continue;
+        };
         for photo in photos {
-            let Some(display_id) = photo.get("display_id").and_then(Value::as_str) else { continue; };
+            let Some(display_id) = photo.get("display_id").and_then(Value::as_str) else {
+                continue;
+            };
             let source = photo
                 .get("source_path")
                 .and_then(Value::as_str)
@@ -931,15 +1220,24 @@ fn collect_photo_sources(review_sets: &[Value]) -> HashMap<String, String> {
 }
 
 fn destination_for(root: &Path, destination_root: &Path, source: &Path) -> PathBuf {
-    let relative = source.strip_prefix(root).unwrap_or_else(|_| source.file_name().map(Path::new).unwrap_or(source));
+    let relative = source
+        .strip_prefix(root)
+        .unwrap_or_else(|_| source.file_name().map(Path::new).unwrap_or(source));
     destination_root.join(relative)
 }
 
 fn file_size(path: &Path) -> u64 {
-    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
-fn intended_source_bytes<F>(root: &Path, destination_root: &Path, photo_sources: &HashMap<String, String>, include: F) -> u64
+fn intended_source_bytes<F>(
+    root: &Path,
+    destination_root: &Path,
+    photo_sources: &HashMap<String, String>,
+    include: F,
+) -> u64
 where
     F: Fn(&str) -> bool,
 {
@@ -974,7 +1272,10 @@ fn new_id(prefix: &str) -> String {
 }
 
 fn now_millis() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn base64_encode(bytes: &[u8]) -> String {

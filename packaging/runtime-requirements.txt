@@ -1,0 +1,27 @@
+# Cullary bundled Python runtime dependencies.
+# Versions are pinned from the current known-good hippo environment so runtime
+# builds are reproducible. Benchmarks and experiments should use a dev env.
+
+Pillow==11.1.0
+numpy==2.2.4
+opencv-contrib-python==4.13.0.92
+mediapipe==0.10.35
+torch==2.12.1
+transformers==4.51.3
+tokenizers==0.21.1
+huggingface-hub==0.31.4
+
+# Current IQA path uses PIQE through pyiqa. Keep pyiqa installed, but bundle
+# pyiqa model weights only by explicit whitelist when they are used.
+pyiqa==0.1.15.post2
+tensorboard==2.20.0
+scikit-image==0.26.0
+timm==1.0.27
+torchvision==0.27.1
+datasets==5.0.0
+accelerate==1.14.0
+piq==0.8.0
+
+# Not installed in hippo and not required by the current runtime path.
+# Add back with a pinned version only when we enable open_clip-based analyzers.
+# open-clip-torch==<version>

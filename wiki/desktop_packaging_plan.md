@@ -234,7 +234,7 @@ runtime.local.json -> 当前 conda python + 当前 repo src + ~/.cullary/models
 
 ### Phase 2: Packaging Staging Directory
 
-Status: implemented for source/config/exiftool/minimal-model staging. Bundled Python runtime is still Phase 3.
+Status: implemented for source/config/exiftool/minimal-model staging, plus local smoke staging with a copied Python runtime.
 
 目标：生成一个可检查的打包 staging 目录，但先不放进 `.app`。
 
@@ -284,7 +284,7 @@ build/cullary-runtime/bin/python -m cullary.pipeline /path/to/test --progress js
 
 ### Phase 3: Bundled Python Runtime
 
-Status: partially implemented for local smoke testing via direct environment copy. Release-grade runtime packaging is still pending.
+Status: implemented for local smoke testing via direct environment copy. Release-grade runtime slimming/codesign/notarization is still pending.
 
 目标：把 Python runtime 和 site-packages 复制到 staging。
 
@@ -323,8 +323,8 @@ This is useful for local smoke testing the future App resource layout, but it is
 Observed size:
 
 ```text
-build/cullary-runtime-with-python        ~5.0G
-build/cullary-runtime-with-python/python ~4.4G
+build/cullary-runtime-with-python        ~2.8G
+build/cullary-runtime-with-python/python ~2.1G
 build/cullary-runtime-with-python/models ~665M
 ```
 
@@ -378,11 +378,19 @@ Current implementation keeps the normal app build lightweight and adds a separat
 src-tauri/tauri.bundle-runtime.conf.json
 ```
 
-Build commands:
+Build and verification command:
 
 ```bash
-python3 scripts/package_runtime.py --output build/cullary-runtime-with-python --python-env /opt/anaconda3/envs/hippo
-npm run tauri:build -- --debug --bundles app --config src-tauri/tauri.bundle-runtime.conf.json
+npm run runtime:verify
+```
+
+Equivalent individual commands:
+
+```bash
+npm run runtime:stage
+npm run runtime:build:app
+npm run runtime:smoke
+npm run runtime:smoke:full
 ```
 
 Output:
@@ -391,11 +399,64 @@ Output:
 src-tauri/target/debug/bundle/macos/Cullary Runtime.app
 ```
 
+Internal release DMG:
+
+```bash
+npm run runtime:verify:release
+```
+
+Outputs:
+
+```text
+src-tauri/target/release/bundle/macos/Cullary Runtime.app
+src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg
+```
+
+The internal DMG uses a plain `create-dmg` mode with Finder prettifying skipped. This avoids the current Tauri DMG script failure in the agent environment while still producing a mountable internal test DMG. It is not signed or notarized.
+
+DMG mount smoke verification:
+
+```bash
+npm run runtime:smoke:dmg
+```
+
+Verified result:
+
+```text
+/Volumes/Cullary/
+  Applications -> /Applications
+  Cullary Runtime.app
+
+smoke_returncode: 0
+```
+
+Full release verification status:
+
+```bash
+npm run runtime:verify:release
+```
+
+Current result: passed on 2026-06-29.
+
+Release summary artifact:
+
+```text
+src-tauri/target/release/bundle/Cullary Runtime.release-summary.json
+```
+
+The summary includes app size, DMG size, DMG SHA-256, target architecture, unsigned/internal channel, and verification status.
+
+Internal tester instructions:
+
+```text
+wiki/internal_test_guide.md
+```
+
 Observed resource size:
 
 ```text
-Cullary Runtime.app/Contents/Resources        ~5.1G
-Resources/python                              ~4.4G
+Cullary Runtime.app/Contents/Resources        ~2.9G
+Resources/python                              ~2.2G
 Resources/models                              ~665M
 ```
 
@@ -408,6 +469,30 @@ CULLARY_MODEL_DIR=Resources/models
 CULLARY_EXIFTOOL=Resources/bin/exiftool
 import torch, transformers, mediapipe, cv2, cullary
 ```
+
+Pipeline smoke from the generated `.app` passed using existing `.cullary` artifacts:
+
+```bash
+python3 scripts/smoke_app_runtime.py \
+  --app "src-tauri/target/debug/bundle/macos/Cullary Runtime.app" \
+  --folder /Users/liubin/Desktop/TestImage
+```
+
+This runs:
+
+```text
+Resources/python/bin/python -m cullary.pipeline <folder> --skip-preprocess --progress jsonl
+```
+
+with `PYTHONPATH`, `CULLARY_MODEL_DIR`, and `CULLARY_EXIFTOOL` pointing to App Resources.
+
+Small full-pipeline smoke also passed against a 4-photo temp folder:
+
+```bash
+npm run runtime:smoke:full
+```
+
+This verifies the bundled Python runtime, bundled model whitelist, and bundled exiftool path without relying on the repo Python process.
 
 For final release, the same resources should be reduced and then attached to the normal product build.
 
@@ -451,7 +536,25 @@ src-tauri/target/release/bundle/macos/Cullary.app
 
 ### Phase 5: Diagnostics
 
+Status: Rust command implemented; UI display can be added when needed.
+
 目标：用户机器上出错时给出可理解诊断，而不是 Python traceback。
+
+Implemented command:
+
+```text
+get_runtime_diagnostics
+```
+
+The start screen now exposes this through a compact `运行环境检查` panel for internal testers.
+
+It returns:
+
+- runtime config source path and base dir;
+- resolved Python, PYTHONPATH, working dir, config, model dir, exiftool, and cache paths;
+- exists / is_file / is_dir status for each path;
+- `python -V` and `exiftool -ver` results;
+- env preview for `PYTHONPATH`, `CULLARY_MODEL_DIR`, `CULLARY_EXIFTOOL`, and `TRANSFORMERS_OFFLINE`.
 
 Rust 增加 command：
 
@@ -521,28 +624,28 @@ Rust:
 - [ ] `start_pipeline` 使用 runtime config
 - [ ] `CULLARY_MODEL_DIR` 注入
 - [ ] `CULLARY_EXIFTOOL` 注入
-- [ ] diagnostics command
+- [x] diagnostics command
 
 Python:
 
 - [ ] `ensure_tools()` 支持 `CULLARY_EXIFTOOL`
-- [ ] 启动时记录实际 `model_dir`
-- [ ] 启动时记录实际 `exiftool` 路径
+- [x] diagnostics 返回实际 `model_dir`
+- [x] diagnostics 返回实际 `exiftool` 路径
 - [ ] 可选：模型文件校验命令
 
 Build scripts:
 
-- [ ] `packaging/models.manifest.json`
-- [ ] `scripts/package_runtime.py`
+- [x] `packaging/models.manifest.json`
+- [x] `scripts/package_runtime.py`
 - [ ] staging 目录生成
 - [ ] 最小模型集复制
-- [ ] exiftool 复制
-- [ ] Python runtime 复制
-- [ ] staging smoke test
+- [x] exiftool 复制
+- [x] Python runtime 复制 for local smoke staging
+- [x] staging smoke test
 
 Tauri:
 
-- [ ] bundle resources
+- [x] bundle resources
 - [ ] release build 验证
 - [ ] DMG 验证
 

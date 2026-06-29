@@ -39,6 +39,7 @@ Cullary focuses on one job:
 - [Integration Contract](wiki/integration_contract.md)
 - [Desktop Implementation Status](wiki/desktop_implementation_status.md)
 - [Desktop Packaging Plan](wiki/desktop_packaging_plan.md)
+- [Internal Test Guide](wiki/internal_test_guide.md)
 
 
 ## Desktop App
@@ -62,23 +63,52 @@ Validate the current desktop contract:
 npm run check:desktop
 ```
 
-Stage runtime resources for future app packaging:
+Verify the current bundled-runtime app path:
 
 ```bash
-python3 scripts/package_runtime.py
+npm run runtime:verify
 ```
 
-For a local smoke staging that also copies the current Python environment:
+That command stages runtime resources, builds `Cullary Runtime.app`, runs an existing-artifact smoke test, and runs a 4-photo full-pipeline smoke test. The bundled runtime build stages only the required model whitelist from `packaging/models.manifest.json`; larger benchmark models under `~/.cullary/models` are not copied.
+
+Individual runtime packaging steps are also available:
 
 ```bash
-python3 scripts/package_runtime.py --output build/cullary-runtime-with-python --python-env /opt/anaconda3/envs/hippo
+npm run runtime:stage
+npm run runtime:build:app
+npm run runtime:smoke
+npm run runtime:smoke:full
 ```
 
-Build a debug `.app` that bundles that staged runtime:
+Build an internal release DMG with bundled runtime:
 
 ```bash
-npm run tauri:build -- --debug --bundles app --config src-tauri/tauri.bundle-runtime.conf.json
+npm run runtime:verify:release
 ```
+
+Current internal DMG output:
+
+```text
+src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg
+```
+
+This internal DMG is unsigned and not notarized. It is suitable for local/internal testing, not a polished public release. `runtime:verify:release` also mounts the generated DMG and smoke-tests the app from `/Volumes/Cullary/`.
+
+Current verification command:
+
+```bash
+npm run runtime:verify:release
+```
+
+Current result: passed on 2026-06-29.
+
+Release summary output:
+
+```text
+src-tauri/target/release/bundle/Cullary Runtime.release-summary.json
+```
+
+The summary records the internal DMG path, size, SHA-256, and verification status.
 
 The desktop app uses:
 
@@ -92,6 +122,8 @@ Pipeline launch is controlled by a runtime config. Development fallback is gener
 ```bash
 CULLARY_RUNTIME_CONFIG=/path/to/runtime.local.json npm run tauri:dev
 ```
+
+Runtime diagnostics are available through the Tauri command `get_runtime_diagnostics` for checking bundled Python, model, and exiftool paths. The start screen includes a Runtime Check button for internal testers to collect this information without opening developer tools.
 
 Final confirmation is safe staging, not permanent deletion. Files marked `待删除` are moved to `<input_folder>/.to_delete/`; operation logs are written to `.cullary/file_operations.jsonl` and can be undone by batch.
 
