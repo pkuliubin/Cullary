@@ -338,7 +338,12 @@ class PreprocessPipeline:
         executor_cls = ThreadPoolExecutor if PARALLEL_EXECUTOR_BY_STAGE[stage] == "thread" else ProcessPoolExecutor
         workers = self.stage_workers(stage)
         if pending:
-            with executor_cls(max_workers=workers) as executor:
+            try:
+                executor = executor_cls(max_workers=workers)
+            except (OSError, PermissionError) as exc:
+                self.emit("stage_warning", stage=stage, message=f"process executor unavailable, falling back to threads: {type(exc).__name__}: {exc}")
+                executor = ThreadPoolExecutor(max_workers=workers)
+            with executor:
                 futures = {executor.submit(execute_stage_worker, stage, rec, self.config, self.tools, self.folder): rec for rec in pending}
                 for future in as_completed(futures):
                     rec = futures[future]

@@ -11,4 +11,5 @@ __pycache__/
 # Desktop app artifacts
 node_modules/
 dist/
+build/
 src-tauri/target/

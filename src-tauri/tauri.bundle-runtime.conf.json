@@ -1,0 +1,15 @@
+{
+  "productName": "Cullary",
+  "identifier": "com.cullary.desktop.runtime",
+  "bundle": {
+    "resources": {
+      "../build/cullary-runtime-with-python/runtime.json": "runtime.json",
+      "../build/cullary-runtime-with-python/package_summary.json": "package_summary.json",
+      "../build/cullary-runtime-with-python/bin": "bin",
+      "../build/cullary-runtime-with-python/config": "config",
+      "../build/cullary-runtime-with-python/python-src": "python-src",
+      "../build/cullary-runtime-with-python/models": "models",
+      "../build/cullary-runtime-with-python/python": "python"
+    }
+  }
+}

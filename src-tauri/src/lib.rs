@@ -6,6 +6,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::TaskRegistry::default())
         .invoke_handler(tauri::generate_handler![
+            commands::get_runtime_diagnostics,
             commands::start_pipeline,
             commands::cancel_pipeline,
             commands::load_review_summary,

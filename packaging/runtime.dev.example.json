@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "pipeline_mode": "python_module",
+  "python_binary": "/opt/anaconda3/envs/hippo/bin/python",
+  "pythonpath": "/Users/liubin/Projects/Cullary/src",
+  "working_dir": "/Users/liubin/Projects/Cullary",
+  "module": "cullary.pipeline",
+  "config_path": "/Users/liubin/Projects/Cullary/config/preprocess.default.json",
+  "model_dir": "~/.cullary/models",
+  "exiftool_binary": "/usr/local/bin/exiftool"
+}
