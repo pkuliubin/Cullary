@@ -26,8 +26,9 @@ code { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflo
 .processing-screen { grid-template-columns: minmax(0, 1040px); align-content: center; }
 .processing-side { width: 100%; display: flex; align-items: center; justify-content: space-between; margin-bottom: -18px; }
 .processing-side h2 { margin: 0; color: var(--muted); }
+.start-copy { text-align: right; }
 .start-copy h1 { font-size: clamp(54px, 9vw, 116px); margin: 0; letter-spacing: -.07em; }
-.start-copy p:not(.eyebrow) { max-width: 520px; color: var(--muted); font-size: 18px; }
+.start-copy p { max-width: 520px; margin-left: auto; color: var(--muted); font-size: 18px; }
 .start-panel, .progress-panel { width: min(560px, 100%); padding: 28px; background: linear-gradient(180deg, var(--surface), #11130f); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 24px 80px var(--shadow); }
 .folder-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin: 8px 0 18px; }
 .pipeline-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
@@ -468,3 +469,50 @@ ul { padding-left: 18px; }
 .compare-mode .inspector-toggle { left: 0; transform: translate(0, -50%); }
 .compare-mode.compare-inspector-open .inspector-toggle { transform: translate(-22px, -50%); }
 .compare-mode.compare-inspector-open .workspace { padding-right: 0; }
+
+/* Batch selection and deck action bar */
+.deck-photo-card,
+.deck-challenger-card { position: relative; }
+.select-check { position: absolute; left: 8px; top: 8px; z-index: 4; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid rgba(238,244,226,.48); border-radius: 6px; background: rgba(8,10,8,.68); color: #071008; font-size: 12px; font-weight: 900; line-height: 1; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.select-check.checked { border-color: rgba(214,255,114,.92); background: var(--accent); }
+.deck-photo-card.multi-selected,
+.deck-challenger-card.multi-selected { border-color: rgba(214,255,114,.9) !important; box-shadow: 0 0 0 2px rgba(214,255,114,.2) !important; }
+.compact-deck .deck-photo-card .select-check,
+.compact-deck .deck-challenger-card .select-check { left: 10px; top: 10px; }
+
+.compact-deck .deck-photo-card,
+.compact-deck .deck-photo-card.active,
+.compact-deck .deck-photo-card:focus,
+.compact-deck .deck-photo-card:hover { flex: 0 0 176px; width: 176px; min-width: 176px; max-width: 176px; grid-template-columns: 66px minmax(0, 1fr); }
+.compact-deck .deck-photo-card .image-frame { width: 66px; height: 58px; }
+.compact-deck .deck-photo-card > span { grid-column: 2; padding-right: 2px; }
+
+.hero-action-bar { position: absolute; left: 50%; bottom: 16px; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid rgba(50,58,44,.78); border-radius: 999px; background: rgba(8,10,8,.82); backdrop-filter: blur(10px); box-shadow: 0 14px 38px rgba(0,0,0,.32); transform: translateX(-50%); }
+.hero-action-bar span { min-width: 48px; padding: 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; white-space: nowrap; }
+.hero-action-bar button { min-height: 32px; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 850; }
+.hero-action-bar .ghost-action { color: var(--muted); background: transparent; border-color: transparent; }
+
+/* Refined deck controls: commands live outside the image, selection is pool-scoped. */
+.schema11-deck.compact-deck { grid-template-rows: 82px minmax(0, 1fr) 44px 118px !important; gap: 8px; }
+.deck-command-bar { display: inline-flex; align-items: center; justify-self: center; align-self: center; gap: 6px; padding: 5px; border: 1px solid rgba(50,58,44,.78); border-radius: 999px; background: rgba(8,10,8,.88); box-shadow: 0 10px 28px rgba(0,0,0,.25); }
+.deck-command-bar span { min-width: 48px; padding: 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; white-space: nowrap; }
+.deck-command-bar button { min-height: 30px; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 850; }
+.deck-command-bar .ghost-action { color: var(--muted); background: transparent; border-color: transparent; }
+.hero-action-bar { display: none; }
+
+.select-check { left: auto; right: 8px; top: 8px; width: 16px; height: 16px; border-radius: 999px; opacity: .55; color: #071008; font-size: 11px; }
+.deck-photo-card:hover .select-check,
+.deck-challenger-card:hover .select-check,
+.select-check.checked { opacity: 1; }
+.select-check.checked { width: 22px; height: 22px; }
+.compact-deck .deck-photo-card .select-check,
+.compact-deck .deck-challenger-card .select-check { left: auto; right: 10px; top: 10px; }
+.deck-photo-card.multi-selected,
+.deck-challenger-card.multi-selected { border-color: rgba(214,255,114,.78) !important; box-shadow: inset 0 0 0 1px rgba(214,255,114,.38) !important; }
+
+/* Shift-select update: commands return to the image corner as a compact vertical stack. */
+.schema11-deck.compact-deck { grid-template-rows: 82px minmax(0, 1fr) 118px !important; gap: 10px; }
+.deck-command-bar { position: absolute; right: 16px; bottom: 16px; z-index: 5; display: grid; grid-template-columns: 1fr; justify-items: stretch; gap: 6px; width: 92px; padding: 7px; border: 1px solid rgba(50,58,44,.78); border-radius: 18px; background: rgba(8,10,8,.82); backdrop-filter: blur(10px); box-shadow: 0 14px 38px rgba(0,0,0,.32); }
+.deck-command-bar span { min-width: 0; padding: 0 2px 2px; color: var(--muted); font-size: 11px; font-weight: 800; text-align: center; white-space: nowrap; }
+.deck-command-bar button { width: 100%; min-height: 28px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 850; }
+.deck-command-bar .ghost-action { color: var(--muted); background: transparent; border-color: transparent; }

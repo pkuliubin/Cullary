@@ -28,6 +28,9 @@ import {
   selectKeeper,
   selectSet,
   setDecisionState,
+  togglePhotoSelected,
+  selectPhotoRange,
+  clearPhotoSelection,
   updateDeckZoom,
   updateZoom,
   applyPersistedDecisions,
@@ -35,7 +38,7 @@ import {
 } from './reviewState.js';
 
 function cloneState(state: any) {
-  return { ...state, decisions: new Map(state.decisions), completedSets: new Set(state.completedSets || []), compare: { ...state.compare, left: { ...state.compare.left }, right: { ...state.compare.right } }, deckZoom: { ...(state.deckZoom || { scale: 1, x: 0, y: 0 }) } };
+  return { ...state, decisions: new Map(state.decisions), completedSets: new Set(state.completedSets || []), selectedPhotoIds: new Set(state.selectedPhotoIds || []), compare: { ...state.compare, left: { ...state.compare.left }, right: { ...state.compare.right } }, deckZoom: { ...(state.deckZoom || { scale: 1, x: 0, y: 0 }) } };
 }
 
 function decisionLabel(value: string) {
@@ -239,6 +242,20 @@ export default function App() {
     });
   };
 
+  const saveDecisions = (photos: any[], userState: string, source = 'batch') => {
+    const list = (photos || []).filter(Boolean);
+    if (!list.length) return;
+    mutate((draft) => {
+      for (const photo of list) {
+        const previous = setDecisionState(draft, photo, userState);
+        appendDecision(draft, photo, userState, previous, source);
+      }
+      clearPhotoSelection(draft);
+      draft.stagePlan = null;
+      draft.lastAction = `${list.length} 张已标记为${decisionLabel(userState)}`;
+    });
+  };
+
   useEffect(() => {
     let cleanup: any = null;
     repository.listenPipelineEvents((event: any) => {
@@ -279,14 +296,14 @@ export default function App() {
   }, [state.mode, state.screen]);
 
   if (state.screen === 'processing') return <ProcessingScreen state={state} loadMockReview={loadMockReview} mutate={mutate} />;
-  if (state.screen === 'review' && set) return <ReviewScreen state={state} mutate={mutate} saveDecision={saveDecision} appendDecision={appendDecision} returnToStart={returnToStart} />;
+  if (state.screen === 'review' && set) return <ReviewScreen state={state} mutate={mutate} saveDecision={saveDecision} saveDecisions={saveDecisions} appendDecision={appendDecision} returnToStart={returnToStart} />;
   if (state.screen === 'staging') return <StagingScreen state={state} mutate={mutate} returnToStart={returnToStart} />;
   return <StartScreen state={state} mutate={mutate} loadMockReview={loadMockReview} />;
 }
 
 function StartScreen({ state, mutate, loadMockReview }: any) {
   return <main className="start-screen">
-    <section className="start-copy"><p className="eyebrow">本地照片筛选工作台</p><h1>Cullary</h1><p>把连拍和相似照片整理成一组，先给出建议，再由你快速决定保留哪些。</p></section>
+    <section className="start-copy"><h1>Cullary</h1><p>One burst, one best.</p></section>
     <section className="start-panel">
       <label>文件夹</label>
       <div className="folder-row"><code>{state.folder}</code><button onClick={async () => { const folder = await repository.chooseFolder(); if (folder) mutate((draft: any) => { draft.folder = folder; }); }}>选择</button></div>
@@ -368,7 +385,7 @@ function buildPipelineProgress(events: any[], groups: any[], status: string) {
   return { latest, stagePercents, groupPercents, currentGroup, currentSubstage, overallPercent };
 }
 
-function ReviewScreen({ state, mutate, saveDecision, appendDecision, returnToStart }: any) {
+function ReviewScreen({ state, mutate, saveDecision, saveDecisions, appendDecision, returnToStart }: any) {
   const [clusterCollapsed, setClusterCollapsed] = useState(false);
   const [compareInspectorOpen, setCompareInspectorOpen] = useState(false);
   useEffect(() => {
@@ -382,7 +399,7 @@ function ReviewScreen({ state, mutate, saveDecision, appendDecision, returnToSta
   return <main className={`review-shell ${clusterCollapsed ? 'cluster-collapsed' : ''} ${state.mode === 'compare' ? 'compare-mode' : ''} ${compareInspectorOpen ? 'compare-inspector-open' : ''}`}>
     <header className="topbar"><div className="topbar-title"><button className="back-project-button" title="返回主页面" aria-label="返回主页面" onClick={returnToStart}>‹</button><strong>Cullary</strong><span>{state.summary?.review_set_count || state.reviewSets.length} 组</span></div><div className="top-actions"><button onClick={() => mutate((d: any) => { d.mode = 'deck'; })}>组视图</button><button onClick={() => mutate((d: any) => { d.mode = 'grid'; })}>查看全部</button><button onClick={() => mutate((d: any) => { d.screen = 'staging'; })}>全局最终确认</button></div></header>
     <aside className="cluster-list"><button className="cluster-toggle" title={clusterCollapsed ? '展开分组' : '折叠分组'} aria-label={clusterCollapsed ? '展开分组' : '折叠分组'} onClick={() => setClusterCollapsed(!clusterCollapsed)}>{clusterCollapsed ? '›' : '‹'}</button><ClusterList state={state} mutate={mutate} collapsed={clusterCollapsed} /></aside>
-    <section className="workspace">{state.lastAction && <div className="action-toast">{state.lastAction}</div>}{state.mode === 'compare' ? <CompareView state={state} mutate={mutate} appendDecision={appendDecision} /> : state.mode === 'grid' ? <GridView state={state} /> : <DeckView state={state} mutate={mutate} saveDecision={saveDecision} />}</section>
+    <section className="workspace">{state.lastAction && <div className="action-toast">{state.lastAction}</div>}{state.mode === 'compare' ? <CompareView state={state} mutate={mutate} appendDecision={appendDecision} /> : state.mode === 'grid' ? <GridView state={state} /> : <DeckView state={state} mutate={mutate} saveDecision={saveDecision} saveDecisions={saveDecisions} />}</section>
     <aside className="inspector">
       {state.mode === 'compare' && <button className="inspector-toggle" title={compareInspectorOpen ? '隐藏对比信息' : '显示对比信息'} aria-label={compareInspectorOpen ? '隐藏对比信息' : '显示对比信息'} onClick={() => setCompareInspectorOpen(!compareInspectorOpen)}>{compareInspectorOpen ? '›' : '‹'}</button>}
       {state.mode === 'compare' ? <CompareInspector state={state} /> : <Inspector state={state} mutate={mutate} saveDecision={saveDecision} refreshStagePlan={refreshStagePlan} />}
@@ -401,47 +418,63 @@ function ClusterList({ state, mutate, collapsed = false }: any) {
   });
 }
 
-function DeckView({ state, mutate, saveDecision }: any) {
+function DeckView({ state, mutate, saveDecision, saveDecisions }: any) {
   const set = activeSet(state);
   const selected = activePhoto(state);
   const keepers = keeperPhotos(state);
   const challengers = challengerPhotos(state);
+  const selectedIds = state.selectedPhotoIds || new Set();
+  const selectedPhotos = (set?.photos || []).filter((photo: any) => selectedIds.has(photo.display_id));
   const selectedState = decisionFor(state, selected);
   const canCompare = Boolean(activeKeeper(state) && activeChallenger(state));
+  const actionPhotos = selectedPhotos.length ? selectedPhotos : selected ? [selected] : [];
+  const actionLabel = selectedPhotos.length ? `${selectedPhotos.length} 张` : '当前图';
+  const selectedPool = state.selectedPool;
+  const toggleSelection = (event: any, photo: any, pool: string, orderedPhotos: any[]) => {
+    event.stopPropagation();
+    mutate((draft: any) => {
+      const ids = orderedPhotos.map((item: any) => item.display_id);
+      if (event.shiftKey) selectPhotoRange(draft, photo.display_id, pool, ids);
+      else togglePhotoSelected(draft, photo.display_id, pool);
+    });
+  };
   return <div className="deck-view schema11-deck compact-deck">
     <section className="pool-section deck-pool keep-strip" aria-label="保留照片">
       <div className="pool-side-label">保留</div>
-      <div className="keeper-slots pool-strip">{keepers.map((photo: any) => <PhotoCard key={photo.display_id} state={state} photo={photo} active={selected?.display_id === photo.display_id} label="保留" onClick={() => mutate((d: any) => selectKeeper(d, photo.display_id))} extra={<button className="mini-action icon-action danger-action" title="移动到待删除" aria-label="移动到待删除" onClick={(event) => { event.stopPropagation(); saveDecision(photo, 'user_challenger', 'move_to_delete'); }}>↓</button>} />)}</div>
+      <div className="keeper-slots pool-strip">{keepers.map((photo: any) => <PhotoCard key={photo.display_id} state={state} photo={photo} active={selected?.display_id === photo.display_id} selected={selectedIds.has(photo.display_id)} label="保留" onClick={(event: any) => event.shiftKey ? toggleSelection(event, photo, 'keep', keepers) : mutate((d: any) => selectKeeper(d, photo.display_id))} onToggle={(event: any) => toggleSelection(event, photo, 'keep', keepers)} />)}</div>
     </section>
     <div className={`hero-photo ${selectedState}`}>
       <ZoomablePhoto state={state} mutate={mutate} photo={selected} view={state.deckZoom || { scale: 1, x: 0, y: 0 }} update={(draft: any, updater: any) => updateDeckZoom(draft, updater)} />
       <button className="hero-reset-button" title="重置视图" aria-label="重置视图" onClick={() => mutate(resetDeckZoom)}>↺</button>
       <span className={`decision-pill ${selectedState}`}>{decisionLabel(selectedState)}{isAlternate(set, selected) ? ' · 备选' : ''}</span>
-      <div className="hero-action-rail" aria-label="当前大图操作">
-        <button className="primary" disabled={!canCompare} onClick={() => mutate((d: any) => { d.mode = 'compare'; })}>对比</button>
-        <button className={selectedState === 'user_keep' ? 'selected-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_keep')}>保留</button>
-        <button className={selectedState !== 'user_keep' ? 'danger-action' : ''} disabled={!selected} onClick={() => saveDecision(selected, 'user_challenger')}>待删</button>
+      <div className="deck-command-bar" aria-label="当前大图操作">
+        <span>{actionLabel}</span>
+        <button className="primary" disabled={!canCompare || selectedPhotos.length > 0} onClick={() => mutate((d: any) => { d.mode = 'compare'; })}>对比</button>
+        <button className={selectedState === 'user_keep' && !selectedPhotos.length ? 'selected-action' : ''} disabled={!actionPhotos.length || selectedPool === 'keep'} onClick={() => selectedPhotos.length ? saveDecisions(selectedPhotos, 'user_keep', 'batch_keep') : saveDecision(selected, 'user_keep')}>保留</button>
+        <button className={selectedState !== 'user_keep' && !selectedPhotos.length ? 'danger-action' : ''} disabled={!actionPhotos.length || selectedPool === 'delete'} onClick={() => selectedPhotos.length ? saveDecisions(selectedPhotos, 'user_challenger', 'batch_delete') : saveDecision(selected, 'user_challenger')}>待删</button>
+        {selectedPhotos.length > 0 && <button className="ghost-action" onClick={() => mutate(clearPhotoSelection)}>取消选择</button>}
       </div>
     </div>
     <section className="pool-section deck-pool delete-strip" aria-label="待删除照片">
       <div className="pool-side-label danger-title">待删除</div>
-      <div className="challenger-strip">{challengers.map((photo: any, index: number) => <ChallengerCard key={photo.display_id} state={state} photo={photo} index={index} active={selected?.display_id === photo.display_id} onClick={() => mutate((d: any) => selectChallenger(d, photo.display_id))} />)}</div>
+      <div className="challenger-strip">{challengers.map((photo: any, index: number) => <ChallengerCard key={photo.display_id} state={state} photo={photo} index={index} active={selected?.display_id === photo.display_id} selected={selectedIds.has(photo.display_id)} onClick={(event: any) => event.shiftKey ? toggleSelection(event, photo, 'delete', challengers) : mutate((d: any) => selectChallenger(d, photo.display_id))} onToggle={(event: any) => toggleSelection(event, photo, 'delete', challengers)} />)}</div>
     </section>
   </div>;
 }
 
-function PhotoCard({ state, photo, active, label, onClick, extra }: any) {
+function PhotoCard({ state, photo, active, selected, label, onClick, onToggle }: any) {
   const status = compactPhotoStatus(state, photo, label);
-  return <button className={`deck-photo-card photo-card ${active ? 'active' : ''} ${decisionFor(state, photo)}`} onClick={onClick}>
+  return <button className={`deck-photo-card photo-card ${active ? 'active' : ''} ${selected ? 'multi-selected' : ''} ${decisionFor(state, photo)}`} onClick={onClick}>
+    <span className={`select-check ${selected ? 'checked' : ''}`} role="checkbox" aria-checked={selected} title={selected ? '取消选择' : '选择'} onClick={onToggle}>{selected ? '✓' : ''}</span>
     <Image state={state} photo={photo} />
     <span><strong>{photo.display_id}</strong><small>{status}</small></span>
-    {extra}
   </button>;
 }
 
-function ChallengerCard({ state, photo, index, active, onClick }: any) {
+function ChallengerCard({ state, photo, index, active, selected, onClick, onToggle }: any) {
   const status = compactPhotoStatus(state, photo, `${index + 1}`);
-  return <button className={`deck-challenger-card challenger ${active ? 'active' : ''} ${isAlternate(activeSet(state), photo) ? 'alternate' : ''}`} onClick={onClick}>
+  return <button className={`deck-challenger-card challenger ${active ? 'active' : ''} ${selected ? 'multi-selected' : ''} ${isAlternate(activeSet(state), photo) ? 'alternate' : ''}`} onClick={onClick}>
+    <span className={`select-check ${selected ? 'checked' : ''}`} role="checkbox" aria-checked={selected} title={selected ? '取消选择' : '选择'} onClick={onToggle}>{selected ? '✓' : ''}</span>
     <Image state={state} photo={photo} />
     <span className="thumb-badge">{status}</span>
   </button>;
@@ -455,7 +488,6 @@ function compactPhotoStatus(state: any, photo: any, fallback: string) {
   if (delta) return `${stateLabel} · Δ ${delta}`;
   return stateLabel || fallback;
 }
-
 function GridView({ state }: any) {
   const set = activeSet(state);
   return <div className="grid-view">{set.photos.map((photo: any) => { const value = decisionFor(state, photo); return <button key={photo.display_id} className={`photo-tile ${value}`}><Image state={state} photo={photo} /><span>{photo.rank}. {photo.display_id}</span><small>{decisionLabel(value)}{isAlternate(set, photo) ? ' · 备选' : ''}</small></button>; })}</div>;
