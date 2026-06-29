@@ -18,6 +18,49 @@ pub struct TaskRegistry {
     children: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
 }
 
+trait ExpandHome {
+    fn expand_home(self) -> PathBuf;
+}
+
+impl ExpandHome for PathBuf {
+    fn expand_home(self) -> PathBuf {
+        let text = self.to_string_lossy();
+        if text == "~" {
+            return env::var_os("HOME").map(PathBuf::from).unwrap_or(self);
+        }
+        if let Some(rest) = text.strip_prefix("~/") {
+            if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+                return home.join(rest);
+            }
+        }
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: String,
+    #[serde(default = "default_pipeline_mode")]
+    pub pipeline_mode: String,
+    pub python_binary: String,
+    pub pythonpath: String,
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    #[serde(default = "default_pipeline_module")]
+    pub module: String,
+    #[serde(default)]
+    pub config_path: Option<String>,
+    #[serde(default)]
+    pub model_dir: Option<String>,
+    #[serde(default)]
+    pub exiftool_binary: Option<String>,
+    #[serde(skip)]
+    pub source_path: Option<PathBuf>,
+    #[serde(skip)]
+    pub base_dir: Option<PathBuf>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StagePlan {
     pub schema_version: String,
@@ -78,22 +121,55 @@ pub struct UndoResult {
 #[tauri::command]
 pub fn start_pipeline(folder: String, app: AppHandle, registry: State<'_, TaskRegistry>) -> Result<Value, String> {
     let folder_path = require_dir(&folder)?;
-    let repo_root = repo_root()?;
-    let python_path = repo_root.join("src");
+    let runtime = load_runtime_config(&app)?;
     let task_id = new_id("task");
-    let python = if Path::new("/opt/anaconda3/envs/hippo/bin/python").exists() {
-        "/opt/anaconda3/envs/hippo/bin/python".to_string()
-    } else {
-        "python3".to_string()
-    };
 
-    let mut child = Command::new(python)
-        .current_dir(&repo_root)
-        .env("PYTHONPATH", python_path.to_string_lossy().to_string())
+    if runtime.pipeline_mode != "python_module" {
+        return Err(format!("unsupported pipeline_mode: {}", runtime.pipeline_mode));
+    }
+
+    let python = resolve_runtime_path(&app, &runtime, &runtime.python_binary)?;
+    let pythonpath = resolve_runtime_path(&app, &runtime, &runtime.pythonpath)?;
+    let working_dir = match runtime.working_dir.as_deref() {
+        Some(path) => resolve_runtime_path(&app, &runtime, path)?,
+        None => runtime.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
+    };
+    let config_path = match runtime.config_path.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let model_dir = match runtime.model_dir.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let exiftool_binary = match runtime.exiftool_binary.as_deref() {
+        Some(path) => Some(resolve_runtime_path(&app, &runtime, path)?),
+        None => None,
+    };
+    let runtime_cache_dir = runtime_cache_dir(&app)?;
+
+    let mut command = Command::new(&python);
+    command
+        .current_dir(&working_dir)
+        .env("PYTHONPATH", pythonpath.to_string_lossy().to_string())
         .env("PATH", gui_safe_path())
+        .env("MPLCONFIGDIR", runtime_cache_dir.join("matplotlib").to_string_lossy().to_string())
+        .env("XDG_CACHE_HOME", runtime_cache_dir.join("xdg").to_string_lossy().to_string())
+        .env("HF_HOME", runtime_cache_dir.join("huggingface").to_string_lossy().to_string())
+        .env("TRANSFORMERS_OFFLINE", "1")
         .arg("-m")
-        .arg("cullary.pipeline")
-        .arg(folder_path.to_string_lossy().to_string())
+        .arg(&runtime.module)
+        .arg(folder_path.to_string_lossy().to_string());
+    if let Some(config_path) = config_path {
+        command.arg("--config").arg(config_path.to_string_lossy().to_string());
+    }
+    if let Some(model_dir) = model_dir {
+        command.env("CULLARY_MODEL_DIR", model_dir.to_string_lossy().to_string());
+    }
+    if let Some(exiftool_binary) = exiftool_binary {
+        command.env("CULLARY_EXIFTOOL", exiftool_binary.to_string_lossy().to_string());
+    }
+    let mut child = command
         .arg("--progress")
         .arg("jsonl")
         .stdout(Stdio::piped())
@@ -544,6 +620,133 @@ fn gui_safe_path() -> String {
         }
     }
     parts.join(":")
+}
+
+fn default_schema_version() -> String {
+    "1.0".into()
+}
+
+fn default_pipeline_mode() -> String {
+    "python_module".into()
+}
+
+fn default_pipeline_module() -> String {
+    "cullary.pipeline".into()
+}
+
+fn load_runtime_config(app: &AppHandle) -> Result<RuntimeConfig, String> {
+    let config_path = runtime_config_path(app)?;
+    let mut config: RuntimeConfig = serde_json::from_str(
+        &fs::read_to_string(&config_path)
+            .map_err(|err| format!("failed to read runtime config {}: {err}", config_path.display()))?,
+    )
+    .map_err(|err| format!("failed to parse runtime config {}: {err}", config_path.display()))?;
+    config.source_path = Some(config_path.clone());
+    config.base_dir = config_path.parent().map(Path::to_path_buf);
+    Ok(config)
+}
+
+fn runtime_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Ok(path) = env::var("CULLARY_RUNTIME_CONFIG") {
+        let path = PathBuf::from(path).expand_home();
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(format!("CULLARY_RUNTIME_CONFIG does not point to a file: {}", path.display()));
+    }
+    if let Some(path) = user_runtime_config_path() {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let resource_config = resource_dir.join("runtime.json");
+        if resource_config.is_file() {
+            return Ok(resource_config);
+        }
+    }
+    dev_runtime_config()
+}
+
+fn user_runtime_config_path() -> Option<PathBuf> {
+    let home = env::var_os("HOME").map(PathBuf::from)?;
+    Some(home.join("Library/Application Support/Cullary/runtime.local.json"))
+}
+
+fn dev_runtime_config() -> Result<PathBuf, String> {
+    let root = repo_root()?;
+    let path = root.join("runtime.local.json");
+    if path.is_file() {
+        return Ok(path);
+    }
+    let generated = root.join("build/runtime.dev.json");
+    if generated.is_file() {
+        return Ok(generated);
+    }
+    write_dev_runtime_config(&root, &generated)?;
+    Ok(generated)
+}
+
+fn write_dev_runtime_config(root: &Path, path: &Path) -> Result<(), String> {
+    let python = if Path::new("/opt/anaconda3/envs/hippo/bin/python").exists() {
+        "/opt/anaconda3/envs/hippo/bin/python"
+    } else {
+        "python3"
+    };
+    let exiftool = find_on_path("exiftool").unwrap_or_else(|| "exiftool".into());
+    let config = json!({
+        "schema_version": "1.0",
+        "pipeline_mode": "python_module",
+        "python_binary": python,
+        "pythonpath": root.join("src").to_string_lossy(),
+        "working_dir": root.to_string_lossy(),
+        "module": "cullary.pipeline",
+        "config_path": root.join("config/preprocess.default.json").to_string_lossy(),
+        "model_dir": "~/.cullary/models",
+        "exiftool_binary": exiftool,
+    });
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("failed to create runtime config dir {}: {err}", parent.display()))?;
+    }
+    fs::write(path, serde_json::to_string_pretty(&config).unwrap() + "\n")
+        .map_err(|err| format!("failed to write dev runtime config {}: {err}", path.display()))
+}
+
+fn find_on_path(name: &str) -> Option<String> {
+    for dir in gui_safe_path().split(':') {
+        let candidate = Path::new(dir).join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+fn resolve_runtime_path(app: &AppHandle, config: &RuntimeConfig, raw: &str) -> Result<PathBuf, String> {
+    let expanded = PathBuf::from(raw).expand_home();
+    if expanded.is_absolute() {
+        return Ok(expanded);
+    }
+    if let Some(rest) = raw.strip_prefix("resources/") {
+        let resource_dir = app.path().resource_dir().map_err(|err| format!("failed to resolve app resource dir: {err}"))?;
+        return Ok(resource_dir.join(rest));
+    }
+    if raw == "resources" {
+        return app.path().resource_dir().map_err(|err| format!("failed to resolve app resource dir: {err}"));
+    }
+    let base = config.base_dir.clone().unwrap_or_else(|| PathBuf::from("."));
+    Ok(base.join(expanded))
+}
+
+fn runtime_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = match app.path().app_cache_dir() {
+        Ok(path) => path,
+        Err(_) => env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join("Library/Caches/Cullary"))
+            .ok_or_else(|| "failed to resolve runtime cache dir".to_string())?,
+    };
+    fs::create_dir_all(&base).map_err(|err| format!("failed to create runtime cache dir {}: {err}", base.display()))?;
+    Ok(base)
 }
 
 fn repo_root() -> Result<PathBuf, String> {

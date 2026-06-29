@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "description": "Minimal model set required by config/preprocess.default.json.",
+  "root": "~/.cullary/models",
+  "required_paths": [
+    "yunet/face_detection_yunet_2023mar.onnx",
+    "mediapipe/selfie_segmenter.tflite",
+    "hf-direct/facebook__dinov2-small/config.json",
+    "hf-direct/facebook__dinov2-small/model.safetensors",
+    "hf-direct/facebook__dinov2-small/preprocessor_config.json",
+    "hf-direct/openai__clip-vit-base-patch32/config.json",
+    "hf-direct/openai__clip-vit-base-patch32/merges.txt",
+    "hf-direct/openai__clip-vit-base-patch32/preprocessor_config.json",
+    "hf-direct/openai__clip-vit-base-patch32/pytorch_model.bin",
+    "hf-direct/openai__clip-vit-base-patch32/tokenizer.json",
+    "hf-direct/openai__clip-vit-base-patch32/tokenizer_config.json",
+    "hf-direct/openai__clip-vit-base-patch32/vocab.json",
+    "laion-aesthetic/sa_0_4_vit_b_32_linear.pth"
+  ],
+  "excluded_experimental_paths": [
+    "hf-direct/facebook__dinov2-base",
+    "hf-direct/google__siglip-base-patch16-224",
+    "hf-direct/openai__clip-vit-large-patch14",
+    "laion-aesthetic/sa_0_4_vit_l_14_linear.pth"
+  ]
+}

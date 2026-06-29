@@ -4,6 +4,8 @@ This document records the current Tauri/Rust/Frontend implementation state.
 
 Last verified: 2026-06-25.
 
+Packaging plan: [Desktop Packaging Plan](desktop_packaging_plan.md).
+
 ## Implemented
 
 Desktop scaffold:

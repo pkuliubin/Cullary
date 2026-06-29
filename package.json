@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "tauri:build:runtime": "tauri build --config src-tauri/tauri.bundle-runtime.conf.json",
     "check:mock": "node app/scripts/validate-mock-data.mjs",
     "check:desktop": "npm run check:mock && npm run test:review-state && npm run test:staging-contract && npm run build && npm run test:render",
     "test:review-state": "node app/scripts/test-review-state.mjs",

@@ -38,6 +38,7 @@ Cullary focuses on one job:
 - [Desktop App Architecture](wiki/app_architecture.md)
 - [Integration Contract](wiki/integration_contract.md)
 - [Desktop Implementation Status](wiki/desktop_implementation_status.md)
+- [Desktop Packaging Plan](wiki/desktop_packaging_plan.md)
 
 
 ## Desktop App
@@ -61,12 +62,36 @@ Validate the current desktop contract:
 npm run check:desktop
 ```
 
+Stage runtime resources for future app packaging:
+
+```bash
+python3 scripts/package_runtime.py
+```
+
+For a local smoke staging that also copies the current Python environment:
+
+```bash
+python3 scripts/package_runtime.py --output build/cullary-runtime-with-python --python-env /opt/anaconda3/envs/hippo
+```
+
+Build a debug `.app` that bundles that staged runtime:
+
+```bash
+npm run tauri:build -- --debug --bundles app --config src-tauri/tauri.bundle-runtime.conf.json
+```
+
 The desktop app uses:
 
 - React/Vite for UI;
 - Tauri/Rust for folder access, Python process management, `.cullary` reads/writes, and safe file staging;
 - Python for analysis and review-set generation;
 - `.cullary/` artifacts as the local integration contract.
+
+Pipeline launch is controlled by a runtime config. Development fallback is generated at `build/runtime.dev.json`; packaged builds will use `runtime.json` from the app resources. You can override it with:
+
+```bash
+CULLARY_RUNTIME_CONFIG=/path/to/runtime.local.json npm run tauri:dev
+```
 
 Final confirmation is safe staging, not permanent deletion. Files marked `待删除` are moved to `<input_folder>/.to_delete/`; operation logs are written to `.cullary/file_operations.jsonl` and can be undone by batch.
 
