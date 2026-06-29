@@ -172,23 +172,6 @@ function photoBytes(photo: any) {
 }
 
 
-function runtimePathOk(item: any) {
-  if (!item) return true;
-  return Boolean(item.exists && (item.is_file || item.is_dir));
-}
-
-function runtimeDiagnosticsOk(diagnostics: any) {
-  if (!diagnostics) return false;
-  const paths = diagnostics.paths || {};
-  const required = [paths.python_binary, paths.pythonpath, paths.working_dir, paths.config_path, paths.model_dir, paths.exiftool_binary];
-  return required.every(runtimePathOk) && diagnostics.versions?.python?.ok !== false && diagnostics.versions?.exiftool?.ok !== false;
-}
-
-function compactPath(path: any) {
-  const value = String(path || '—');
-  return value.replace(/^\/Users\/[^/]+/, '~');
-}
-
 function sortedReviewSets(reviewSets: any[]) {
   return [...reviewSets].sort((a, b) => (b.photo_count || 0) - (a.photo_count || 0));
 }
@@ -320,22 +303,6 @@ export default function App() {
 }
 
 function StartScreen({ state, mutate, loadMockReview }: any) {
-  const [diagnostics, setDiagnostics] = useState<any>(null);
-  const [diagnosticsStatus, setDiagnosticsStatus] = useState('idle');
-  const [diagnosticsError, setDiagnosticsError] = useState('');
-  const runDiagnostics = async () => {
-    setDiagnosticsStatus('running');
-    setDiagnosticsError('');
-    try {
-      const result = await repository.getRuntimeDiagnostics();
-      setDiagnostics(result);
-      setDiagnosticsStatus(runtimeDiagnosticsOk(result) ? 'ok' : 'warning');
-    } catch (error: any) {
-      setDiagnostics(null);
-      setDiagnosticsStatus('failed');
-      setDiagnosticsError(String(error?.message || error));
-    }
-  };
   return <main className="start-screen">
     <section className="start-copy"><h1>Cullary</h1><p>One burst, one best.</p></section>
     <section className="start-panel">
@@ -343,33 +310,8 @@ function StartScreen({ state, mutate, loadMockReview }: any) {
       <div className="folder-row"><code>{state.folder}</code><button onClick={async () => { const folder = await repository.chooseFolder(); if (folder) mutate((draft: any) => { draft.folder = folder; }); }}>选择</button></div>
       <button className="primary wide" onClick={loadMockReview}>打开 Review</button>
       <button className="secondary wide" onClick={async () => { mutate((draft: any) => { draft.screen = 'processing'; draft.pipelineStatus = 'running'; draft.pipelineEvents = [{ type: 'progress', stage: 'start', done: 0, total: 1, message: 'Starting pipeline' }]; }); const task = await repository.startPipeline(state.folder); mutate((draft: any) => { draft.pipelineTaskId = task?.taskId || null; }); }}>开始分析</button>
-      <div className="diagnostics-box">
-        <button className="ghost wide" onClick={runDiagnostics} disabled={diagnosticsStatus === 'running'}>{diagnosticsStatus === 'running' ? '检查中…' : '运行环境检查'}</button>
-        {diagnosticsStatus !== 'idle' && <RuntimeDiagnosticsCard diagnostics={diagnostics} status={diagnosticsStatus} error={diagnosticsError} />}
-      </div>
     </section>
   </main>;
-}
-
-function RuntimeDiagnosticsCard({ diagnostics, status, error }: any) {
-  if (status === 'failed') return <div className="diagnostics-card failed"><strong>检查失败</strong><p>{error}</p></div>;
-  if (!diagnostics) return null;
-  const paths = diagnostics.paths || {};
-  const rows = [
-    ['Python', paths.python_binary, diagnostics.versions?.python?.stdout || diagnostics.versions?.python?.stderr],
-    ['模型', paths.model_dir, null],
-    ['ExifTool', paths.exiftool_binary, diagnostics.versions?.exiftool?.stdout],
-    ['配置', paths.config_path, null],
-  ];
-  return <div className={`diagnostics-card ${status}`}>
-    <div className="diagnostics-head"><strong>{status === 'ok' ? '环境正常' : '需要检查'}</strong><span>{diagnostics.runtime_config?.module || 'cullary.pipeline'}</span></div>
-    {rows.map(([label, item, version]: any) => <div className="diagnostics-row" key={label}>
-      <span className={runtimePathOk(item) ? 'ok-dot' : 'bad-dot'} />
-      <b>{label}</b>
-      <code title={item?.path}>{compactPath(item?.path)}</code>
-      {version && <em>{version}</em>}
-    </div>)}
-  </div>;
 }
 
 function ProcessingScreen({ state, loadMockReview, mutate }: any) {

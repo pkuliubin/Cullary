@@ -39,7 +39,7 @@ def prepare_sample_folder(source: Path, limit: int | None) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test Cullary.app bundled Python runtime resources.")
-    parser.add_argument("--app", default="src-tauri/target/debug/bundle/macos/Cullary Runtime.app", help="Path to .app bundle")
+    parser.add_argument("--app", default="src-tauri/target/debug/bundle/macos/Cullary.app", help="Path to .app bundle")
     parser.add_argument("--folder", default="/Users/liubin/Desktop/TestImage", help="Photo folder with existing .cullary artifacts or source photos")
     parser.add_argument("--full", action="store_true", help="Run full pipeline instead of --skip-preprocess")
     parser.add_argument("--sample", action="store_true", help="Copy --limit photos from --folder into a temp folder before running full smoke")

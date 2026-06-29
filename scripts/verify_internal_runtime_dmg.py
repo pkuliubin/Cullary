@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 DEFAULT_DMG = Path("src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg")
-DEFAULT_APP_NAME = "Cullary Runtime.app"
+DEFAULT_APP_NAME = "Cullary.app"
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -41,7 +41,7 @@ def detach(device: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Mount and smoke test the internal Cullary Runtime DMG.")
+    parser = argparse.ArgumentParser(description="Mount and smoke test the internal Cullary DMG.")
     parser.add_argument("--dmg", default=str(DEFAULT_DMG))
     parser.add_argument("--app-name", default=DEFAULT_APP_NAME)
     parser.add_argument("--folder", default="/Users/liubin/Desktop/TestImage")

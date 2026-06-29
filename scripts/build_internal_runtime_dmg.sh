@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Cullary Runtime.app"
+APP_NAME="Cullary.app"
 APP_PATH="$ROOT/src-tauri/target/release/bundle/macos/$APP_NAME"
 DMG_DIR="$ROOT/src-tauri/target/release/bundle/dmg"
 DMG_SCRIPT="$DMG_DIR/bundle_dmg.sh"

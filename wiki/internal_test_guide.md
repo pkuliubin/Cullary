@@ -1,6 +1,6 @@
 # Cullary Internal Test Guide
 
-This guide is for internal macOS testers using the unsigned Cullary Runtime build.
+This guide is for internal macOS testers using the unsigned Cullary build.
 
 ## Package
 
@@ -8,7 +8,7 @@ Current internal package:
 
 ```text
 src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg
-src-tauri/target/release/bundle/Cullary Runtime.release-summary.json
+src-tauri/target/release/bundle/Cullary.release-summary.json
 ```
 
 The app is unsigned and not notarized. It is for internal testing only.
@@ -16,19 +16,19 @@ The app is unsigned and not notarized. It is for internal testing only.
 ## Install
 
 1. Open the DMG.
-2. Drag `Cullary Runtime.app` to `Applications`.
+2. Drag `Cullary.app` to `Applications`.
 3. Open it from Finder.
 
 If macOS blocks the app because it is unsigned:
 
-1. Right-click `Cullary Runtime.app`.
+1. Right-click `Cullary.app`.
 2. Choose `Open`.
 3. Confirm `Open` again.
 
 If the app is still blocked during internal testing, run:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Cullary Runtime.app"
+xattr -dr com.apple.quarantine "/Applications/Cullary.app"
 ```
 
 ## First Run Check

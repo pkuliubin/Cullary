@@ -516,22 +516,3 @@ ul { padding-left: 18px; }
 .deck-command-bar span { min-width: 0; padding: 0 2px 2px; color: var(--muted); font-size: 11px; font-weight: 800; text-align: center; white-space: nowrap; }
 .deck-command-bar button { width: 100%; min-height: 28px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 850; }
 .deck-command-bar .ghost-action { color: var(--muted); background: transparent; border-color: transparent; }
-
-/* Runtime diagnostics for internal test builds */
-.ghost { color: var(--muted); background: rgba(11,13,10,.72); }
-.diagnostics-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.diagnostics-card { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #0b0d0a; }
-.diagnostics-card.ok { border-color: rgba(214,255,114,.38); }
-.diagnostics-card.warning, .diagnostics-card.failed { border-color: rgba(227,179,95,.55); }
-.diagnostics-card.failed { color: #ffb3aa; }
-.diagnostics-card p { margin: 6px 0 0; color: var(--muted); word-break: break-word; }
-.diagnostics-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.diagnostics-head strong { color: var(--accent); }
-.diagnostics-head span { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.diagnostics-row { display: grid; grid-template-columns: 10px 58px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid rgba(50,58,44,.48); }
-.diagnostics-row:first-of-type { border-top: 0; }
-.diagnostics-row b { color: var(--text); font-size: 12px; }
-.diagnostics-row code { min-width: 0; color: var(--muted); font-size: 11px; }
-.diagnostics-row em { color: var(--accent); font-style: normal; font-size: 11px; white-space: nowrap; }
-.ok-dot, .bad-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 3px rgba(214,255,114,.12); }
-.bad-dot { background: var(--danger); box-shadow: 0 0 0 3px rgba(213,104,95,.12); }

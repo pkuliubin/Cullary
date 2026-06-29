@@ -9,9 +9,9 @@ import time
 from pathlib import Path
 
 
-DEFAULT_APP = Path("src-tauri/target/release/bundle/macos/Cullary Runtime.app")
+DEFAULT_APP = Path("src-tauri/target/release/bundle/macos/Cullary.app")
 DEFAULT_DMG = Path("src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg")
-DEFAULT_OUTPUT = Path("src-tauri/target/release/bundle/Cullary Runtime.release-summary.json")
+DEFAULT_OUTPUT = Path("src-tauri/target/release/bundle/Cullary.release-summary.json")
 
 
 def sha256_file(path: Path) -> str:
@@ -46,7 +46,7 @@ def main() -> int:
     summary = {
         "schema_version": "1.0",
         "created_at_epoch": int(time.time()),
-        "product": "Cullary Runtime",
+        "product": "Cullary",
         "version": "0.1.0",
         "target": "aarch64-apple-darwin",
         "channel": "internal-unsigned",

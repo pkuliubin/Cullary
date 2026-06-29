@@ -396,7 +396,7 @@ npm run runtime:smoke:full
 Output:
 
 ```text
-src-tauri/target/debug/bundle/macos/Cullary Runtime.app
+src-tauri/target/debug/bundle/macos/Cullary.app
 ```
 
 Internal release DMG:
@@ -408,7 +408,7 @@ npm run runtime:verify:release
 Outputs:
 
 ```text
-src-tauri/target/release/bundle/macos/Cullary Runtime.app
+src-tauri/target/release/bundle/macos/Cullary.app
 src-tauri/target/release/bundle/dmg/Cullary_0.1.0_aarch64.dmg
 ```
 
@@ -425,7 +425,7 @@ Verified result:
 ```text
 /Volumes/Cullary/
   Applications -> /Applications
-  Cullary Runtime.app
+  Cullary.app
 
 smoke_returncode: 0
 ```
@@ -441,7 +441,7 @@ Current result: passed on 2026-06-29.
 Release summary artifact:
 
 ```text
-src-tauri/target/release/bundle/Cullary Runtime.release-summary.json
+src-tauri/target/release/bundle/Cullary.release-summary.json
 ```
 
 The summary includes app size, DMG size, DMG SHA-256, target architecture, unsigned/internal channel, and verification status.
@@ -455,7 +455,7 @@ wiki/internal_test_guide.md
 Observed resource size:
 
 ```text
-Cullary Runtime.app/Contents/Resources        ~2.9G
+Cullary.app/Contents/Resources        ~2.9G
 Resources/python                              ~2.2G
 Resources/models                              ~665M
 ```
@@ -474,7 +474,7 @@ Pipeline smoke from the generated `.app` passed using existing `.cullary` artifa
 
 ```bash
 python3 scripts/smoke_app_runtime.py \
-  --app "src-tauri/target/debug/bundle/macos/Cullary Runtime.app" \
+  --app "src-tauri/target/debug/bundle/macos/Cullary.app" \
   --folder /Users/liubin/Desktop/TestImage
 ```
 

@@ -69,7 +69,7 @@ Verify the current bundled-runtime app path:
 npm run runtime:verify
 ```
 
-That command stages runtime resources, builds `Cullary Runtime.app`, runs an existing-artifact smoke test, and runs a 4-photo full-pipeline smoke test. The bundled runtime build stages only the required model whitelist from `packaging/models.manifest.json`; larger benchmark models under `~/.cullary/models` are not copied.
+That command stages runtime resources, builds `Cullary.app`, runs an existing-artifact smoke test, and runs a 4-photo full-pipeline smoke test. The bundled runtime build stages only the required model whitelist from `packaging/models.manifest.json`; larger benchmark models under `~/.cullary/models` are not copied.
 
 Individual runtime packaging steps are also available:
 
@@ -105,7 +105,7 @@ Current result: passed on 2026-06-29.
 Release summary output:
 
 ```text
-src-tauri/target/release/bundle/Cullary Runtime.release-summary.json
+src-tauri/target/release/bundle/Cullary.release-summary.json
 ```
 
 The summary records the internal DMG path, size, SHA-256, and verification status.
