@@ -42,6 +42,18 @@ export const repository = {
       unlistenCancelled();
     };
   },
+  async getRuntimeDiagnostics() {
+    if (!hasTauri()) {
+      return {
+        schema_version: '1.0',
+        runtime_config: { source_path: 'mock', pipeline_mode: 'python_module', module: 'cullary.pipeline' },
+        paths: {},
+        versions: {},
+        env_preview: {},
+      };
+    }
+    return invoke('get_runtime_diagnostics');
+  },
   async startPipeline(folder) {
     if (!hasTauri()) return { taskId: 'mock-task' };
     return invoke('start_pipeline', { folder });

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "pipeline_mode": "python_module",
+  "python_binary": "resources/python/bin/python",
+  "pythonpath": "resources/python-src",
+  "working_dir": "resources",
+  "module": "cullary.pipeline",
+  "config_path": "resources/config/preprocess.default.json",
+  "model_dir": "resources/models",
+  "exiftool_binary": "resources/bin/exiftool"
+}

@@ -8,6 +8,9 @@ export function createReviewState({ folder, summary = null, reviewSets = [] }) {
     activePhotoId: null,
     activeKeeperId: null,
     activeChallengerId: null,
+    selectedPhotoIds: new Set(),
+    selectedPool: null,
+    selectionAnchorId: null,
     mode: 'deck',
     decisions: new Map(),
     completedSets: new Set(),
@@ -172,6 +175,9 @@ export function selectSet(state, index) {
   state.activePhotoId = null;
   state.activeKeeperId = null;
   state.activeChallengerId = null;
+  state.selectedPhotoIds = new Set();
+  state.selectedPool = null;
+  state.selectionAnchorId = null;
   state.mode = 'deck';
   resetAllZoom(state);
 }
@@ -191,6 +197,40 @@ export function selectChallenger(state, indexOrId) {
   state.activeChallengerId = photo.display_id;
   state.activePhotoId = photo.display_id;
   resetDeckZoom(state);
+}
+
+export function togglePhotoSelected(state, photoId, pool = null) {
+  if (!photoId) return;
+  const selected = state.selectedPool && pool && state.selectedPool !== pool ? new Set() : new Set(state.selectedPhotoIds || []);
+  if (selected.has(photoId)) selected.delete(photoId);
+  else selected.add(photoId);
+  state.selectedPhotoIds = selected;
+  state.selectedPool = selected.size ? pool : null;
+  state.selectionAnchorId = photoId;
+}
+
+export function selectPhotoRange(state, photoId, pool, orderedIds = []) {
+  if (!photoId) return;
+  const ids = orderedIds.length ? orderedIds : [photoId];
+  const anchor = state.selectedPool === pool && state.selectionAnchorId ? state.selectionAnchorId : photoId;
+  const start = ids.indexOf(anchor);
+  const end = ids.indexOf(photoId);
+  if (start < 0 || end < 0) {
+    togglePhotoSelected(state, photoId, pool);
+    return;
+  }
+  const [from, to] = start <= end ? [start, end] : [end, start];
+  const selected = state.selectedPool === pool ? new Set(state.selectedPhotoIds || []) : new Set();
+  for (const id of ids.slice(from, to + 1)) selected.add(id);
+  state.selectedPhotoIds = selected;
+  state.selectedPool = pool;
+  state.selectionAnchorId = anchor;
+}
+
+export function clearPhotoSelection(state) {
+  state.selectedPhotoIds = new Set();
+  state.selectedPool = null;
+  state.selectionAnchorId = null;
 }
 
 export function selectMoveAside(state, photoId) {
@@ -224,6 +264,15 @@ export function setDecisionState(state, photo, userState) {
   if (!photo) return 'user_undecided';
   const previous = decisionFor(state, photo);
   state.decisions.set(photo.display_id, userState);
+  if (state.selectedPhotoIds?.has(photo.display_id)) {
+    const selected = new Set(state.selectedPhotoIds);
+    selected.delete(photo.display_id);
+    state.selectedPhotoIds = selected;
+    if (!selected.size) {
+      state.selectedPool = null;
+      state.selectionAnchorId = null;
+    }
+  }
   if (userState === 'user_keep') {
     state.activeKeeperId = photo.display_id;
     state.activePhotoId = photo.display_id;

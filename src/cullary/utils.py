@@ -102,7 +102,8 @@ def cache_relative(path: Path, folder: Path) -> str:
 
 
 def ensure_tools() -> dict[str, str | None]:
-    return {"exiftool": shutil.which("exiftool"), "sips": shutil.which("sips")}
+    exiftool = os.environ.get("CULLARY_EXIFTOOL")
+    return {"exiftool": exiftool or shutil.which("exiftool"), "sips": shutil.which("sips")}
 
 
 def load_config(path: Path) -> dict[str, Any]:
